@@ -4,7 +4,7 @@ adjtimex	adjtime	adjtimex	i:p	__adjtimex	adjtimex ntp_adjtime __adjtimex_interna
 bdflush		EXTRA	bdflush		i:ii	bdflush
 capget		EXTRA	capget		i:pp	capget
 capset		EXTRA	capset		i:pp	capset
-creat		-	creat		Ci:si	__libc_creat creat
+#creat		-	creat		Ci:si	__libc_creat creat
 create_module	EXTRA	create_module	3	create_module
 delete_module	EXTRA	delete_module	3	delete_module
 epoll_create	EXTRA	epoll_create	i:i	epoll_create
@@ -12,7 +12,7 @@ epoll_ctl	EXTRA	epoll_ctl	i:iiip	epoll_ctl
 epoll_wait	EXTRA	epoll_wait	Ci:ipii	epoll_wait
 fdatasync	-	fdatasync	i:i	fdatasync
 flock		-	flock		i:ii	__flock		flock
-fork		-	fork		i:	__libc_fork	__fork fork
+kernel_fork		-	fork		i:	kernel_fork
 get_kernel_syms	EXTRA	get_kernel_syms	i:p	get_kernel_syms
 getegid		-	getegid		Ei:	__getegid	getegid
 geteuid		-	geteuid		Ei:	__geteuid	geteuid
@@ -30,7 +30,7 @@ inotify_rm_watch	EXTRA	inotify_rm_watch	i:ii	inotify_rm_watch
 ioperm		-	ioperm		i:iii	ioperm
 iopl		-	iopl		i:i	iopl
 klogctl		EXTRA	syslog		i:isi	klogctl
-lchown		-	lchown		i:sii	__lchown	lchown
+#lchown		-	lchown		i:sii	__lchown	lchown
 posix_madvise	-	madvise		Vi:pii	posix_madvise
 madvise		-	madvise		i:pii	madvise
 mincore		-	mincore		i:anV	mincore
@@ -77,20 +77,20 @@ uselib		EXTRA	uselib		i:s	uselib
 vmsplice	EXTRA	vmsplice	i:iPii	vmsplice
 wait4		-	wait4		i:iWiP	__wait4		wait4
 
-chown		-	chown		i:sii	__libc_chown	__chown chown
+#chown		-	chown		i:sii	__libc_chown	__chown chown
 
-setxattr	-	setxattr	i:sspii	setxattr
-lsetxattr	-	lsetxattr	i:sspii	lsetxattr
-fsetxattr	-	fsetxattr	i:ispii	fsetxattr
-getxattr	-	getxattr	i:sspi	getxattr
-lgetxattr	-	lgetxattr	i:sspi	lgetxattr
-fgetxattr	-	fgetxattr	i:ispi	fgetxattr
-listxattr	-	listxattr	i:ssi	listxattr
-llistxattr	-	llistxattr	i:ssi	llistxattr
-flistxattr	-	flistxattr	i:isi	flistxattr
-removexattr	-	removexattr	i:ss	removexattr
-lremovexattr	-	lremovexattr	i:ss	lremovexattr
-fremovexattr	-	fremovexattr	i:is	fremovexattr
+#setxattr	-	setxattr	i:sspii	setxattr
+#lsetxattr	-	lsetxattr	i:sspii	lsetxattr
+#fsetxattr	-	fsetxattr	i:ispii	fsetxattr
+#getxattr	-	getxattr	i:sspi	getxattr
+#lgetxattr	-	lgetxattr	i:sspi	lgetxattr
+#fgetxattr	-	fgetxattr	i:ispi	fgetxattr
+#listxattr	-	listxattr	i:ssi	listxattr
+#llistxattr	-	llistxattr	i:ssi	llistxattr
+#flistxattr	-	flistxattr	i:isi	flistxattr
+#removexattr	-	removexattr	i:ss	removexattr
+#lremovexattr	-	lremovexattr	i:ss	lremovexattr
+#fremovexattr	-	fremovexattr	i:is	fremovexattr
 
 mq_timedsend	-	mq_timedsend	Ci:ipiip	__GI_mq_timedsend	mq_timedsend
 mq_timedreceive	-	mq_timedreceive	Ci:ipipp	__GI_mq_timedreceive	mq_timedreceive

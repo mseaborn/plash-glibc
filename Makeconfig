@@ -915,6 +915,7 @@ all-subdirs = csu assert ctype locale intl catgets math setjmp signal	    \
 	      grp pwd posix io termios resource misc socket sysvipc gmon    \
 	      gnulib iconv iconvdata wctype manual shadow po argp	    \
 	      crypt nss localedata timezone rt conform debug		    \
+              plash \
 	      $(add-on-subdirs) $(dlfcn) $(binfmt-subdir)
 
 ifndef avoid-generated

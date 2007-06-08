@@ -1,0 +1,13 @@
+libc {
+  GLIBC_2.0 {
+    # Insert these symbols into the earliest GLIBC version symbol.
+    # These used to go under the version PLASH_GLIBC.  However, I want
+    # some executables to link these symbols weakly, so that they don't
+    # have to be defined for the executable to work.  Unfortunately,
+    # the linker still makes the executable require the PLASH_GLIBC
+    # symbol in that case.
+    plash_libc_duplicate_connection;
+    plash_libc_reset_connection;
+    plash_libc_kernel_execve;
+  }
+}

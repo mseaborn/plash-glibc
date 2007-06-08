@@ -12,12 +12,12 @@ extern int __mkdir (__const char *__path, __mode_t __mode);
 extern int __mknod (__const char *__path,
 		    __mode_t __mode, __dev_t __dev);
 #if !defined NOT_IN_libc || defined IS_IN_rtld
-hidden_proto (__fxstat)
-hidden_proto (__fxstat64)
-hidden_proto (__lxstat)
-hidden_proto (__lxstat64)
-hidden_proto (__xstat)
-hidden_proto (__xstat64)
+//hidden_proto (__fxstat)
+//hidden_proto (__fxstat64)
+//hidden_proto (__lxstat)
+//hidden_proto (__lxstat64)
+//hidden_proto (__xstat)
+//hidden_proto (__xstat64)
 #endif
 extern __inline__ int __stat (__const char *__path, struct stat *__statbuf)
 {
