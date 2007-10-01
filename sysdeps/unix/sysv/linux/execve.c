@@ -25,7 +25,7 @@
 #include <bp-checks.h>
 
 int
-__execve (file, argv, envp)
+kernel___execve (file, argv, envp)
      const char *file;
      char *const argv[];
      char *const envp[];
@@ -60,4 +60,4 @@ __execve (file, argv, envp)
   return INLINE_SYSCALL (execve, 3, file, argv, envp);
 #endif
 }
-weak_alias (__execve, execve)
+weak_alias (kernel___execve, kernel_execve)

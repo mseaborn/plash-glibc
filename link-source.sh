@@ -34,6 +34,8 @@ marshal-pack.h
 plash-libc.h
 region.c
 region.h
+serialise.c
+serialise.h
 utils.c
 "
 
