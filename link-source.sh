@@ -17,6 +17,7 @@ libc-at-calls.c
 libc-comms.c
 libc-comms.h
 libc-connect.c
+libc-errno.h
 libc-fds.h
 libc-fork-exec.c
 libc-getsockopt.c
@@ -68,6 +69,7 @@ fgetxattr.c
 flistxattr.c
 fremovexattr.c
 fsetxattr.c
+futimes.c
 futimesat.c
 getcwd.c
 getdents.c
@@ -92,6 +94,7 @@ listxattr.c
 llistxattr.c
 lremovexattr.c
 lsetxattr.c
+lutimes.c
 lxstat64.c
 mkdir.c
 mkdirat.c
@@ -119,8 +122,10 @@ statfs.c
 symlink.c
 symlinkat.c
 telldir.c
+truncate.c
 unlink.c
 unlinkat.c
+utimes.c
 xmknod.c
 xmknodat.c
 xstat64.c

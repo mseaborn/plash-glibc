@@ -7,7 +7,7 @@ include ../Makeconfig
 
 routines = filesysobj region comms cap-protocol cap-call-return marshal-pack \
 	   cap-utils \
-	   libc-comms libc-misc libc-stat \
+	   libc-comms libc-misc libc-stat libc-truncate libc-utime \
 	   kernel_close kernel_dup kernel_dup2
 
 include ../Rules

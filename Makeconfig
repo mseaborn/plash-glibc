@@ -555,7 +555,7 @@ $(subst $(empty) ,:,$(strip $(patsubst -Wl$(comma)-rpath-link=%, %,\
 						$(sysdep-LDFLAGS)))))
 run-program-prefix = $(if $(filter $(notdir $(built-program-file)),\
 				   $(tests-static) $(xtests-static)),, \
-			  $(elf-objpfx)$(rtld-installed-name) \
+			  $(BUILT_WRAPPER) $(elf-objpfx)$(rtld-installed-name) \
 			  --library-path $(rpath-link)$(patsubst %,:%,$(sysdep-library-path)))
 else
 run-program-prefix =
