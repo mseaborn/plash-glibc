@@ -1,5 +1,12 @@
 #!/bin/bash
 
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 <plash-source-directory>"
+  exit 1
+fi
+
+PLASH_DIR="$1"
+
 set -e
 
 files="
@@ -47,11 +54,11 @@ out-vtable-filesysobj.h
 "
 
 for file in $files; do
-  ln -sf ../../plash/src/$file plash/
+  ln -sf $PLASH_DIR/src/$file plash/
 done
 
 for file in $gen_files; do
-  ln -sf ../../plash/gensrc/$file plash/
+  ln -sf $PLASH_DIR/gensrc/$file plash/
 done
 
 empty_files="
