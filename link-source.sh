@@ -72,6 +72,7 @@ creat64.c
 dirfd.c
 dup2.c
 faccessat.c
+fchdir.c
 fchmodat.c
 fdopendir.c
 fgetxattr.c
