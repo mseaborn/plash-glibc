@@ -1,5 +1,6 @@
 /* Convert string representing a number to float value, using given locale.
-   Copyright (C) 1997,1998,2002,2004,2005,2006 Free Software Foundation, Inc.
+   Copyright (C) 1997,1998,2002,2004,2005,2006,2007
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@cygnus.com>, 1997.
 
@@ -481,7 +482,7 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 
   struct locale_data *current = loc->__locales[LC_NUMERIC];
 
-  if (group)
+  if (__builtin_expect (group, 0))
     {
       grouping = _NL_CURRENT (LC_NUMERIC, GROUPING);
       if (*grouping <= 0 || *grouping == CHAR_MAX)
@@ -547,7 +548,7 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
       && (wint_t) cp[1] >= L'0' && (wint_t) cp[1] <= L'9')
     {
       /* We accept it.  This funny construct is here only to indent
-	 the code directly.  */
+	 the code correctly.  */
     }
 #else
   for (cnt = 0; decimal[cnt] != '\0'; ++cnt)
@@ -556,13 +557,15 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
   if (decimal[cnt] == '\0' && cp[cnt] >= '0' && cp[cnt] <= '9')
     {
       /* We accept it.  This funny construct is here only to indent
-	 the code directly.  */
+	 the code correctly.  */
     }
 #endif
   else if (c < L_('0') || c > L_('9'))
     {
       /* Check for `INF' or `INFINITY'.  */
-      if (TOLOWER_C (c) == L_('i') && STRNCASECMP (cp, L_("inf"), 3) == 0)
+      CHAR_TYPE lowc = TOLOWER_C (c);
+
+      if (lowc == L_('i') && STRNCASECMP (cp, L_("inf"), 3) == 0)
 	{
 	  /* Return +/- infinity.  */
 	  if (endptr != NULL)
@@ -573,7 +576,7 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 	  return negative ? -FLOAT_HUGE_VAL : FLOAT_HUGE_VAL;
 	}
 
-      if (TOLOWER_C (c) == L_('n') && STRNCASECMP (cp, L_("nan"), 3) == 0)
+      if (lowc == L_('n') && STRNCASECMP (cp, L_("nan"), 3) == 0)
 	{
 	  /* Return NaN.  */
 	  FLOAT retval = NAN;
@@ -587,7 +590,8 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 	      do
 		++cp;
 	      while ((*cp >= L_('0') && *cp <= L_('9'))
-		     || (TOLOWER (*cp) >= L_('a') && TOLOWER (*cp) <= L_('z'))
+		     || ({ CHAR_TYPE lo = TOLOWER (*cp);
+			   lo >= L_('a') && lo <= L_('z'); })
 		     || *cp == L_('_'));
 
 	      if (*cp != L_(')'))
@@ -639,7 +643,7 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
   while (c == L'0' || ((wint_t) thousands != L'\0' && c == (wint_t) thousands))
     c = *++cp;
 #else
-  if (thousands == NULL)
+  if (__builtin_expect (thousands == NULL, 1))
     while (c == '0')
       c = *++cp;
   else
@@ -650,10 +654,11 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 	  if (c != '0')
 	    {
 	      for (cnt = 0; thousands[cnt] != '\0'; ++cnt)
-		if (c != thousands[cnt])
+		if (thousands[cnt] != cp[cnt])
 		  break;
 	      if (thousands[cnt] != '\0')
 		break;
+	      cp += cnt - 1;
 	    }
 	  c = *++cp;
 	}
@@ -662,20 +667,29 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 
   /* If no other digit but a '0' is found the result is 0.0.
      Return current read pointer.  */
-  if ((c < L_('0') || c > L_('9'))
-      && (base == 16 && (c < (CHAR_TYPE) TOLOWER (L_('a'))
-			 || c > (CHAR_TYPE) TOLOWER (L_('f'))))
+  CHAR_TYPE lowc = TOLOWER (c);
+  if (!((c >= L_('0') && c <= L_('9'))
+	|| (base == 16 && lowc >= L_('a') && lowc <= L_('f'))
+	|| (
 #ifdef USE_WIDE_CHAR
-      && c != (wint_t) decimal
+	    c == (wint_t) decimal
 #else
-      && ({ for (cnt = 0; decimal[cnt] != '\0'; ++cnt)
-	      if (decimal[cnt] != cp[cnt])
-		break;
-	    decimal[cnt] != '\0'; })
+	    ({ for (cnt = 0; decimal[cnt] != '\0'; ++cnt)
+		 if (decimal[cnt] != cp[cnt])
+		   break;
+	       decimal[cnt] == '\0'; })
 #endif
-      && (base == 16 && (cp == start_of_digits
-			 || (CHAR_TYPE) TOLOWER (c) != L_('p')))
-      && (base != 16 && (CHAR_TYPE) TOLOWER (c) != L_('e')))
+	    /* '0x.' alone is not a valid hexadecimal number.
+	       '.' alone is not valid either, but that has been checked
+	       already earlier.  */
+	    && (base != 16
+		|| cp != start_of_digits
+		|| (cp[decimal_len] >= L_('0') && cp[decimal_len] <= L_('9'))
+		|| ({ CHAR_TYPE lo = TOLOWER (cp[decimal_len]);
+		      lo >= L_('a') && lo <= L_('f'); })))
+	|| (base == 16 && (cp != start_of_digits
+			   && lowc == L_('p')))
+	|| (base != 16 && lowc == L_('e'))))
     {
 #ifdef USE_WIDE_CHAR
       tp = __correctly_grouped_prefixwc (start_of_digits, cp, thousands,
@@ -696,17 +710,19 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
   while (1)
     {
       if ((c >= L_('0') && c <= L_('9'))
-	  || (base == 16 && (wint_t) TOLOWER (c) >= L_('a')
-	      && (wint_t) TOLOWER (c) <= L_('f')))
+	  || (base == 16
+	      && ({ CHAR_TYPE lo = TOLOWER (c);
+		    lo >= L_('a') && lo <= L_('f'); })))
 	++dig_no;
       else
 	{
 #ifdef USE_WIDE_CHAR
-	  if ((wint_t) thousands == L'\0' || c != (wint_t) thousands)
+	  if (__builtin_expect ((wint_t) thousands == L'\0', 1)
+	      || c != (wint_t) thousands)
 	    /* Not a digit or separator: end of the integer part.  */
 	    break;
 #else
-	  if (thousands == NULL)
+	  if (__builtin_expect (thousands == NULL, 1))
 	    break;
 	  else
 	    {
@@ -715,13 +731,14 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 		  break;
 	      if (thousands[cnt] != '\0')
 		break;
+	      cp += cnt - 1;
 	    }
 #endif
 	}
       c = *++cp;
     }
 
-  if (grouping && dig_no > 0)
+  if (__builtin_expect (grouping != NULL, 0) && cp > start_of_digits)
     {
       /* Check the grouping of the digits.  */
 #ifdef USE_WIDE_CHAR
@@ -759,13 +776,15 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 	}
     }
 
-  /* We have the number digits in the integer part.  Whether these are all or
-     any is really a fractional digit will be decided later.  */
+  /* We have the number of digits in the integer part.  Whether these
+     are all or any is really a fractional digit will be decided
+     later.  */
   int_no = dig_no;
   lead_zero = int_no == 0 ? -1 : 0;
 
-  /* Read the fractional digits.  A special case are the 'american style'
-     numbers like `16.' i.e. with decimal but without trailing digits.  */
+  /* Read the fractional digits.  A special case are the 'american
+     style' numbers like `16.' i.e. with decimal point but without
+     trailing digits.  */
   if (
 #ifdef USE_WIDE_CHAR
       c == (wint_t) decimal
@@ -780,7 +799,8 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
       cp += decimal_len;
       c = *cp;
       while ((c >= L_('0') && c <= L_('9')) ||
-	     (base == 16 && TOLOWER (c) >= L_('a') && TOLOWER (c) <= L_('f')))
+	     (base == 16 && ({ CHAR_TYPE lo = TOLOWER (c);
+			       lo >= L_('a') && lo <= L_('f'); })))
 	{
 	  if (c != L_('0') && lead_zero == -1)
 	    lead_zero = dig_no - int_no;
@@ -793,8 +813,9 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
   expp = cp;
 
   /* Read exponent.  */
-  if ((base == 16 && TOLOWER (c) == L_('p'))
-      || (base != 16 && TOLOWER (c) == L_('e')))
+  lowc = TOLOWER (c);
+  if ((base == 16 && lowc == L_('p'))
+      || (base != 16 && lowc == L_('e')))
     {
       int exp_negative = 0;
 
@@ -815,17 +836,18 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 	  if (base == 16)
 	    exp_limit = (exp_negative ?
 			 -MIN_EXP + MANT_DIG + 4 * int_no :
-			 MAX_EXP - 4 * int_no + lead_zero);
+			 MAX_EXP - 4 * int_no + 4 * lead_zero + 3);
 	  else
 	    exp_limit = (exp_negative ?
 			 -MIN_10_EXP + MANT_DIG + int_no :
-			 MAX_10_EXP - int_no + lead_zero);
+			 MAX_10_EXP - int_no + lead_zero + 1);
 
 	  do
 	    {
 	      exponent *= 10;
+	      exponent += c - L_('0');
 
-	      if (exponent > exp_limit)
+	      if (__builtin_expect (exponent > exp_limit, 0))
 		/* The exponent is too large/small to represent a valid
 		   number.  */
 		{
@@ -853,7 +875,6 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 		  /* NOTREACHED */
 		}
 
-	      exponent += c - L_('0');
 	      c = *++cp;
 	    }
 	  while (c >= L_('0') && c <= L_('9'));
@@ -888,7 +909,7 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 	--expp;
 	--dig_no;
 	--int_no;
-	++exponent;
+	exponent += base == 16 ? 4 : 1;
       }
     while (dig_no > 0 && exponent < 0);
 
@@ -1010,13 +1031,13 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
     exponent -= incr;
   }
 
-  if (int_no + exponent > MAX_10_EXP + 1)
+  if (__builtin_expect (int_no + exponent > MAX_10_EXP + 1, 0))
     {
       __set_errno (ERANGE);
       return negative ? -FLOAT_HUGE_VAL : FLOAT_HUGE_VAL;
     }
 
-  if (exponent < MIN_10_EXP - (DIG + 1))
+  if (__builtin_expect (exponent < MIN_10_EXP - (DIG + 1), 0))
     {
       __set_errno (ERANGE);
       return 0.0;
@@ -1080,7 +1101,7 @@ ____STRTOF_INTERNAL (nptr, endptr, group, loc)
 
       /* Now we know the exponent of the number in base two.
 	 Check it against the maximum possible exponent.  */
-      if (bits > MAX_EXP)
+      if (__builtin_expect (bits > MAX_EXP, 0))
 	{
 	  __set_errno (ERANGE);
 	  return negative ? -FLOAT_HUGE_VAL : FLOAT_HUGE_VAL;

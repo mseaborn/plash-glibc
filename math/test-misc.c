@@ -1,5 +1,5 @@
 /* Miscellaneous tests which don't fit anywhere else.
-   Copyright (C) 2000, 2001, 2004, 2005 Free Software Foundation, Inc.
+   Copyright (C) 2000, 2001, 2004, 2005, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -44,7 +44,6 @@ main (void)
       }
   }
 
-# if __GNUC__ >= 3 || __GNUC_MINOR__ >= 96
   {
     long double x;
     long double m;
@@ -52,17 +51,17 @@ main (void)
     int e;
     int i;
 
-#  if LDBL_MANT_DIG == 64
+# if LDBL_MANT_DIG == 64
     m = 0xf.fffffffffffffffp-4L;
-#  elif LDBL_MANT_DIG == 106
+# elif LDBL_MANT_DIG == 106
     /* This has to match the mantissa of LDBL_MAX which actually does have a
        missing bit in the middle.  */
     m = 0x1.fffffffffffff7ffffffffffff8p-1L;
-#  elif LDBL_MANT_DIG == 113
+# elif LDBL_MANT_DIG == 113
     m = 0x1.ffffffffffffffffffffffffffffp-1L;
-#  else
-#   error "Please adjust"
-#  endif
+# else
+#  error "Please adjust"
+# endif
 
     for (i = LDBL_MAX_EXP, x = LDBL_MAX; i >= LDBL_MIN_EXP; --i, x /= 2.0L)
       {
@@ -106,9 +105,8 @@ main (void)
       }
 
   }
-# endif
 
-#if 0
+# if 0
   {
     int e;
     long double r = frexpl (LDBL_MIN * LDBL_EPSILON, &e);
@@ -126,7 +124,7 @@ main (void)
 	result = 1;
       }
   }
-#endif
+# endif
 #endif
 
   {
@@ -1179,6 +1177,140 @@ main (void)
       != -LDBL_MIN)
     {
       puts ("nextafterl -LDBL_MIN test failed");
+      result = 1;
+    }
+#endif
+
+  volatile float f1 = FLT_MAX;
+  volatile float f2 = FLT_MAX / 2;
+  (void) &f1;
+  (void) &f2;
+  feclearexcept (FE_ALL_EXCEPT);
+  f2 += f1;
+  int fe = fetestexcept (FE_ALL_EXCEPT);
+  if (fe != (FE_OVERFLOW | FE_INEXACT))
+    {
+      printf ("float overflow test failed: %x\n", fe);
+      result = 1;
+    }
+
+  volatile double d1 = DBL_MAX;
+  volatile double d2 = DBL_MAX / 2;
+  (void) &d1;
+  (void) &d2;
+  feclearexcept (FE_ALL_EXCEPT);
+  d2 += d1;
+  fe = fetestexcept (FE_ALL_EXCEPT);
+  if (fe != (FE_OVERFLOW | FE_INEXACT))
+    {
+      printf ("double overflow test failed: %x\n", fe);
+      result = 1;
+    }
+
+#ifndef NO_LONG_DOUBLE
+  volatile long double ld1 = LDBL_MAX;
+  volatile long double ld2 = LDBL_MAX / 2;
+  (void) &ld1;
+  (void) &ld2;
+  feclearexcept (FE_ALL_EXCEPT);
+  ld2 += ld1;
+  fe = fetestexcept (FE_ALL_EXCEPT);
+  if (fe != (FE_OVERFLOW | FE_INEXACT))
+    {
+      printf ("long double overflow test failed: %x\n", fe);
+      result = 1;
+    }
+#endif
+
+#if !defined NO_LONG_DOUBLE && LDBL_MANT_DIG == 113
+  volatile long double ld3 = 0x1.0000000000010000000100000001p+1;
+  volatile long double ld4 = 0x1.0000000000000000000000000001p+1;
+  (void) &ld3;
+  (void) &ld4;
+  ld3 -= ld4;
+  if (ld3 != 0x1.0p-47)
+    {
+      printf ("long double subtraction test failed %.28La\n", ld3);
+      result = 1;
+    }
+#endif
+
+#if !defined NO_LONG_DOUBLE && LDBL_MANT_DIG >= DBL_MANT_DIG + 4
+  int oldmode = fegetround ();
+  int j;
+  for (j = 0; j < 4; j++)
+    {
+      int mode;
+      int i;
+      int k = 0;
+      const char *mstr;
+      switch (j)
+	{
+#ifdef FE_TONEAREST
+	case 0:
+	  mode = FE_TONEAREST;
+	  mstr = "nearest";
+	  k = 8;
+	  break;
+#endif
+#ifdef FE_DOWNWARD
+	case 1:
+	  mode = FE_DOWNWARD;
+	  mstr = "-inf";
+	  break;
+#endif
+#ifdef FE_UPWARD
+	case 2:
+	  mode = FE_UPWARD;
+	  mstr = "+inf";
+	  k = 15;
+	  break;
+#endif
+#ifdef FE_TOWARDZERO
+	case 3:
+	  mode = FE_TOWARDZERO;
+	  mstr = "0";
+	  break;
+#endif
+	default:
+	  continue;
+	}
+
+      volatile long double ld5 = nextafter (0.0, 1.0) / 16.0L;
+      volatile double d5;
+      (void) &ld5;
+      for (i = 0; i <= 32; i++)
+	{
+	  if (fesetround (mode))
+	    {
+	      printf ("failed to set rounding mode to %s\n", mstr);
+	      result = 1;
+	      break;
+	    }
+	  d5 = ld5 * i;
+	  (void) &d5;
+	  fesetround (oldmode);
+	  if (d5 != ((j == 0 && i == 8) ? 0 : (i + k) / 16)
+		    * nextafter (0.0, 1.0))
+	    {
+	      printf ("%La incorrectly rounded to %s as %a\n",
+		      ld5 * i, mstr, d5);
+	      result = 1;
+	    }
+	}
+    }
+
+  volatile long double ld7 = nextafterl (0.0L, 1.0L);
+  volatile double d7;
+  (void) &ld7;
+  fesetround (FE_UPWARD);
+  d7 = ld7;
+  (void) &d7;
+  fesetround (oldmode);
+
+  if (d7 != nextafter (0.0, 1.0))
+    {
+      printf ("%La incorrectly rounded upward to %a\n", ld7, d7);
       result = 1;
     }
 #endif

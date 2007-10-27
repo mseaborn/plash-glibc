@@ -251,8 +251,7 @@ fts_close(sp)
 	/* Free up child linked list, sort array, path buffer. */
 	if (sp->fts_child)
 		fts_lfree(sp->fts_child);
-	if (sp->fts_array)
-		free(sp->fts_array);
+	free(sp->fts_array);
 	free(sp->fts_path);
 
 	/* Return to original directory, save errno if necessary. */
@@ -377,12 +376,14 @@ fts_read(sp)
 		}
 		p = sp->fts_child;
 		sp->fts_child = NULL;
+		sp->fts_cur = p;
 		goto name;
 	}
 
 	/* Move to the next node on this level. */
 next:	tmp = p;
 	if ((p = p->fts_link) != NULL) {
+		sp->fts_cur = p;
 		free(tmp);
 
 		/*
@@ -395,7 +396,7 @@ next:	tmp = p;
 				return (NULL);
 			}
 			fts_load(sp, p);
-			return (sp->fts_cur = p);
+			return p;
 		}
 
 		/*
@@ -421,11 +422,12 @@ next:	tmp = p;
 name:		t = sp->fts_path + NAPPEND(p->fts_parent);
 		*t++ = '/';
 		memmove(t, p->fts_name, p->fts_namelen + 1);
-		return (sp->fts_cur = p);
+		return p;
 	}
 
 	/* Move up to the parent node. */
 	p = tmp->fts_parent;
+	sp->fts_cur = p;
 	free(tmp);
 
 	if (p->fts_level == FTS_ROOTPARENTLEVEL) {
@@ -466,7 +468,7 @@ name:		t = sp->fts_path + NAPPEND(p->fts_parent);
 		return (NULL);
 	}
 	p->fts_info = p->fts_errno ? FTS_ERR : FTS_DP;
-	return (sp->fts_cur = p);
+	return p;
 }
 
 /*
@@ -705,8 +707,7 @@ fts_build(sp, type)
 				 * structures already allocated.
 				 */
 mem1:				saved_errno = errno;
-				if (p)
-					free(p);
+				free(p);
 				fts_lfree(head);
 				(void)__closedir(dirp);
 				cur->fts_info = FTS_ERR;
@@ -1043,10 +1044,7 @@ fts_palloc(sp, more)
 	 * We limit fts_pathlen to USHRT_MAX to be safe in both cases.
 	 */
 	if (sp->fts_pathlen < 0 || sp->fts_pathlen >= USHRT_MAX) {
-		if (sp->fts_path) {
-			free(sp->fts_path);
-			sp->fts_path = NULL;
-		}
+		free(sp->fts_path);
 		sp->fts_path = NULL;
 		__set_errno (ENAMETOOLONG);
 		return (1);

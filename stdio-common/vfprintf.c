@@ -1,4 +1,4 @@
-/* Copyright (C) 1991-2002, 2003, 2004, 2005, 2006
+/* Copyright (C) 1991-2002, 2003, 2004, 2005, 2006, 2007
    Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -99,6 +99,7 @@
 # define PUTC(C, F)	_IO_putwc_unlocked (C, F)
 # define ORIENT		if (_IO_fwide (s, 1) != 1) return -1
 
+# undef _itoa
 # define _itoa(Val, Buf, Base, Case) _itowa (Val, Buf, Base, Case)
 # define _itoa_word(Val, Buf, Base, Case) _itowa_word (Val, Buf, Base, Case)
 # undef EOF
@@ -1025,10 +1026,11 @@ vfprintf (FILE *s, const CHAR_T *format, va_list ap)
 	    const char *mbs = (const char *) string;			      \
 	    mbstate_t mbstate;						      \
 									      \
-	    len = prec != -1 ? (size_t) prec : strlen (mbs);		      \
+	    len = prec != -1 ? __strnlen (mbs, (size_t) prec) : strlen (mbs); \
 									      \
 	    /* Allocate dynamically an array which definitely is long	      \
-	       enough for the wide character version.  */		      \
+	       enough for the wide character version.  Each byte in the	      \
+	       multi-byte string can produce at most one wide character.  */  \
 	    if (__libc_use_alloca (len * sizeof (wchar_t)))		      \
 	      string = (CHAR_T *) alloca (len * sizeof (wchar_t));	      \
 	    else if ((string = (CHAR_T *) malloc (len * sizeof (wchar_t)))    \
@@ -1159,19 +1161,26 @@ vfprintf (FILE *s, const CHAR_T *format, va_list ap)
 		else							      \
 		  {							      \
 		    /* In case we have a multibyte character set the	      \
-		       situation is more compilcated.  We must not copy	      \
+		       situation is more complicated.  We must not copy	      \
 		       bytes at the end which form an incomplete character. */\
-		    wchar_t ignore[prec];				      \
+		    size_t ignore_size = (unsigned) prec > 1024 ? 1024 : prec;\
+		    wchar_t ignore[ignore_size];			      \
 		    const char *str2 = string;				      \
-		    mbstate_t ps;					      \
+		    const char *strend = string + prec;			      \
+		    if (strend < string)				      \
+		      strend = (const char *) UINTPTR_MAX;		      \
 									      \
+		    mbstate_t ps;					      \
 		    memset (&ps, '\0', sizeof (ps));			      \
-		    if (__mbsnrtowcs (ignore, &str2, prec, prec, &ps)	      \
-			== (size_t) -1)					      \
-		      {							      \
-			done = -1;					      \
-			goto all_done;					      \
-		      }							      \
+									      \
+		    while (str2 != NULL && str2 < strend)		      \
+		      if (__mbsnrtowcs (ignore, &str2, strend - str2,	      \
+					ignore_size, &ps) == (size_t) -1)     \
+			{						      \
+			  done = -1;					      \
+			  goto all_done;				      \
+			}						      \
+									      \
 		    if (str2 == NULL)					      \
 		      len = strlen (string);				      \
 		    else						      \

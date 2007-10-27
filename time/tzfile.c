@@ -1,4 +1,5 @@
-/* Copyright (C) 1991-1993,1995-2001,2003,2004 Free Software Foundation, Inc.
+/* Copyright (C) 1991-1993,1995-2001,2003,2004,2006
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -71,23 +72,33 @@ static inline int
 __attribute ((always_inline))
 decode (const void *ptr)
 {
-  if ((BYTE_ORDER == BIG_ENDIAN) && sizeof (int) == 4)
+  if (BYTE_ORDER == BIG_ENDIAN && sizeof (int) == 4)
     return *(const int *) ptr;
-  else if (BYTE_ORDER == LITTLE_ENDIAN && sizeof (int) == 4)
+  if (sizeof (int) == 4)
     return bswap_32 (*(const int *) ptr);
-  else
-    {
-      const unsigned char *p = ptr;
-      int result = *p & (1 << (CHAR_BIT - 1)) ? ~0 : 0;
 
-      result = (result << 8) | *p++;
-      result = (result << 8) | *p++;
-      result = (result << 8) | *p++;
-      result = (result << 8) | *p++;
+  const unsigned char *p = ptr;
+  int result = *p & (1 << (CHAR_BIT - 1)) ? ~0 : 0;
 
-      return result;
-    }
+  result = (result << 8) | *p++;
+  result = (result << 8) | *p++;
+  result = (result << 8) | *p++;
+  result = (result << 8) | *p++;
+
+  return result;
 }
+
+
+static inline int64_t
+__attribute ((always_inline))
+decode64 (const void *ptr)
+{
+  if ((BYTE_ORDER == BIG_ENDIAN))
+    return *(const int64_t *) ptr;
+
+  return bswap_64 (*(const int64_t *) ptr);
+}
+
 
 void
 __tzfile_read (const char *file, size_t extra, char **extrap)
@@ -102,6 +113,10 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
   size_t types_idx;
   size_t leaps_idx;
   int was_using_tzfile = __use_tzfile;
+  int trans_width = 4;
+
+  if (sizeof (time_t) != 4 && sizeof (time_t) != 8)
+    abort ();
 
   __use_tzfile = 0;
 
@@ -185,8 +200,10 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
   /* No threads reading this stream.  */
   __fsetlocking (f, FSETLOCKING_BYCALLER);
 
+ read_again:
   if (__builtin_expect (fread_unlocked ((void *) &tzhead, sizeof (tzhead),
-					1, f) != 1, 0))
+					1, f) != 1, 0)
+      || memcmp (tzhead.tzh_magic, TZ_MAGIC, sizeof (tzhead.tzh_magic)) != 0)
     goto lose;
 
   num_transitions = (size_t) decode (tzhead.tzh_timecnt);
@@ -195,6 +212,26 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
   num_leaps = (size_t) decode (tzhead.tzh_leapcnt);
   num_isstd = (size_t) decode (tzhead.tzh_ttisstdcnt);
   num_isgmt = (size_t) decode (tzhead.tzh_ttisgmtcnt);
+
+  /* For platforms with 64-bit time_t we use the new format if available.  */
+  if (sizeof (time_t) == 8 && trans_width == 4
+      && tzhead.tzh_version[0] != '\0')
+    {
+      /* We use the 8-byte format.  */
+      trans_width = 8;
+
+      /* Position the stream before the second header.  */
+      size_t to_skip = (num_transitions * (4 + 1)
+			+ num_types * 6
+			+ chars
+			+ num_leaps * 8
+			+ num_isstd
+			+ num_isgmt);
+      if (fseek (f, to_skip, SEEK_CUR) != 0)
+	goto lose;
+
+      goto read_again;
+    }
 
   total_size = num_transitions * (sizeof (time_t) + 1);
   total_size = ((total_size + __alignof__ (struct ttinfo) - 1)
@@ -205,10 +242,10 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
 		& ~(__alignof__ (struct leap) - 1));
   leaps_idx = total_size;
   total_size += num_leaps * sizeof (struct leap);
-  /* This is for the extra memory required by the caller.  */
-  total_size += extra;
 
-  transitions = (time_t *) malloc (total_size);
+  /* Allocate enough memory including the extra block requested by the
+     caller.  */
+  transitions = (time_t *) malloc (total_size + extra);
   if (transitions == NULL)
     goto lose;
 
@@ -220,14 +257,11 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
   if (extra > 0)
     *extrap = (char *) &leaps[num_leaps];
 
-  if (sizeof (time_t) < 4)
-    abort ();
-
-  if (sizeof (time_t) == 4)
+  if (sizeof (time_t) == 4 || trans_width == 8)
     {
-      if (__builtin_expect (fread_unlocked (transitions, 1,
-					    (4 + 1) * num_transitions, f)
-			    != (4 + 1) * num_transitions, 0))
+      if (__builtin_expect (fread_unlocked (transitions, trans_width + 1,
+					    num_transitions, f)
+			    != num_transitions, 0))
 	goto lose;
     }
   else
@@ -245,7 +279,9 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
     if (__builtin_expect (type_idxs[i] >= num_types, 0))
       goto lose;
 
-  if (BYTE_ORDER != BIG_ENDIAN || sizeof (time_t) != 4)
+  if ((BYTE_ORDER != BIG_ENDIAN && (sizeof (time_t) == 4 || trans_width == 4))
+      || (BYTE_ORDER == BIG_ENDIAN && sizeof (time_t) == 8
+	  && trans_width == 4))
     {
       /* Decode the transition times, stored as 4-byte integers in
 	 network (big-endian) byte order.  We work from the end of
@@ -254,6 +290,13 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
       i = num_transitions;
       while (i-- > 0)
 	transitions[i] = decode ((char *) transitions + i * 4);
+    }
+  else if (BYTE_ORDER != BIG_ENDIAN && sizeof (time_t) == 8)
+    {
+      /* Decode the transition times, stored as 8-byte integers in
+	 network (big-endian) byte order.  */
+      for (i = 0; i < num_transitions; ++i)
+	transitions[i] = decode64 ((char *) transitions + i * 8);
     }
 
   for (i = 0; i < num_types; ++i)
@@ -280,13 +323,16 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
 
   for (i = 0; i < num_leaps; ++i)
     {
-      unsigned char x[4];
-      if (__builtin_expect (fread_unlocked (x, 1, sizeof (x), f) != sizeof (x),
-			    0))
+      unsigned char x[8];
+      if (__builtin_expect (fread_unlocked (x, 1, trans_width, f)
+			    != trans_width, 0))
 	goto lose;
-      leaps[i].transition = (time_t) decode (x);
-      if (__builtin_expect (fread_unlocked (x, 1, sizeof (x), f) != sizeof (x),
-			    0))
+      if (sizeof (time_t) == 4 || trans_width == 4)
+	leaps[i].transition = (time_t) decode (x);
+      else
+	leaps[i].transition = (time_t) decode64 (x);
+
+      if (__builtin_expect (fread_unlocked (x, 1, 4, f) != 4, 0))
 	goto lose;
       leaps[i].change = (long int) decode (x);
     }
@@ -310,6 +356,12 @@ __tzfile_read (const char *file, size_t extra, char **extrap)
     }
   while (i < num_types)
     types[i++].isgmt = 0;
+
+  /* XXX When a version 2 file is available it can contain a POSIX TZ-style
+     formatted string which specifies how times past the last one specified
+     are supposed to be handled.  We might want to handle this at some
+     point.  But it might be overhead since most/all? files have an
+     open-ended last entry.  */
 
   fclose (f);
 
@@ -496,13 +548,60 @@ find_transition (time_t timer)
       if (i == num_types)
 	i = 0;
     }
+  else if (timer >= transitions[num_transitions - 1])
+    i = type_idxs[num_transitions - 1];
   else
     {
       /* Find the first transition after TIMER, and
 	 then pick the type of the transition before it.  */
-      for (i = 1; i < num_transitions; ++i)
-	if (timer < transitions[i])
-	  break;
+      size_t lo = 0;
+      size_t hi = num_transitions - 1;
+      /* Assume that DST is changing twice a year and guess initial
+	 search spot from it.
+	 Half of a gregorian year has on average 365.2425 * 86400 / 2
+	 = 15778476 seconds.  */
+      i = (transitions[num_transitions - 1] - timer) / 15778476;
+      if (i < num_transitions)
+	{
+	  i = num_transitions - 1 - i;
+	  if (timer < transitions[i])
+	    {
+	      if (i < 10 || timer >= transitions[i - 10])
+		{
+		  /* Linear search.  */
+		  while (timer < transitions[i - 1])
+		    --i;
+		  goto found;
+		}
+	      hi = i - 10;
+	    }
+	  else
+	    {
+	      if (i + 10 >= num_transitions || timer < transitions[i + 10])
+		{
+		  /* Linear search.  */
+		  while (timer >= transitions[i])
+		    ++i;
+		  goto found;
+		}
+	      lo = i + 10;
+	    }
+	}
+
+      /* Binary search.  */
+      /* assert (timer >= transitions[lo] && timer < transitions[hi]); */
+      while (lo + 1 < hi)
+	{
+	  i = (lo + hi) / 2;
+	  if (timer < transitions[i])
+	    hi = i;
+	  else
+	    lo = i;
+	}
+      i = hi;
+
+    found:
+      /* assert (timer >= transitions[i - 1] && timer < transitions[i]); */
       i = type_idxs[i - 1];
     }
 

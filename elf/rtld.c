@@ -1,5 +1,5 @@
 /* Run time dynamic linker.
-   Copyright (C) 1995-2002, 2003, 2004, 2005, 2006 Free Software Foundation, Inc.
+   Copyright (C) 1995-2006, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -207,8 +207,7 @@ DL_SYSINFO_IMPLEMENTATION
    is fine, too.  The latter is important here.  We can avoid setting
    up a temporary link map for ld.so if we can mark _rtld_global as
    hidden.  */
-#if defined PI_STATIC_AND_HIDDEN && defined HAVE_HIDDEN \
-    && defined HAVE_VISIBILITY_ATTRIBUTE
+#ifdef PI_STATIC_AND_HIDDEN
 # define DONT_USE_BOOTSTRAP_MAP	1
 #endif
 
@@ -292,7 +291,7 @@ _dl_start_final (void *arg, struct dl_start_final_info *info)
   GL(dl_rtld_map).l_map_end = (ElfW(Addr)) _end;
   GL(dl_rtld_map).l_text_end = (ElfW(Addr)) _etext;
   /* Copy the TLS related data if necessary.  */
-#if USE_TLS && !defined DONT_USE_BOOTSTRAP_MAP
+#ifndef DONT_USE_BOOTSTRAP_MAP
 # if USE___THREAD
   assert (info->l.l_tls_modid != 0);
   GL(dl_rtld_map).l_tls_blocksize = info->l.l_tls_blocksize;
@@ -360,10 +359,11 @@ _dl_start (void *arg)
 #endif
 
   /* This #define produces dynamic linking inline functions for
-     bootstrap relocation instead of general-purpose relocation.  */
+     bootstrap relocation instead of general-purpose relocation.
+     Since ld.so must not have any undefined symbols the result
+     is trivial: always the map of ld.so itself.  */
 #define RTLD_BOOTSTRAP
-#define RESOLVE_MAP(sym, version, flags) \
-  ((*(sym))->st_shndx == SHN_UNDEF ? 0 : &bootstrap_map)
+#define RESOLVE_MAP(sym, version, flags) (&bootstrap_map)
 #include "dynamic-link.h"
 
   if (HP_TIMING_INLINE && HP_TIMING_AVAIL)
@@ -400,7 +400,7 @@ _dl_start (void *arg)
   bootstrap_map.l_ld = (void *) bootstrap_map.l_addr + elf_machine_dynamic ();
   elf_get_dynamic_info (&bootstrap_map, NULL);
 
-#if defined USE_TLS && NO_TLS_OFFSET != 0
+#if NO_TLS_OFFSET != 0
   bootstrap_map.l_tls_offset = NO_TLS_OFFSET;
 #endif
 
@@ -701,7 +701,6 @@ match_version (const char *string, struct link_map *map)
   return 0;
 }
 
-#ifdef USE_TLS
 static bool tls_init_tp_called;
 
 static void *
@@ -773,7 +772,6 @@ cannot allocate TLS data structures for initial thread");
 
   return tcbp;
 }
-#endif
 
 #ifdef _LIBC_REENTRANT
 /* _dl_error_catch_tsd points to this for the single-threaded case.
@@ -861,18 +859,14 @@ dl_main (const ElfW(Phdr) *phdr,
   hp_timing_t stop;
   hp_timing_t diff;
 #endif
-#ifdef USE_TLS
   void *tcbp = NULL;
-#endif
 
 #ifdef _LIBC_REENTRANT
   /* Explicit initialization since the reloc would just be more work.  */
   GL(dl_error_catch_tsd) = &_dl_initial_error_catch_tsd;
 #endif
 
-#ifdef USE_TLS
   GL(dl_init_static_tls) = &_dl_nothread_init_static_tls;
-#endif
 
 #if defined SHARED && defined _LIBC_REENTRANT \
     && defined __rtld_lock_default_lock_recursive
@@ -1157,7 +1151,6 @@ of this helper program; chances are you did not intend to run this program.\n\
 	break;
 
       case PT_TLS:
-#ifdef USE_TLS
 	if (ph->p_memsz > 0)
 	  {
 	    /* Note that in the case the dynamic linker we duplicate work
@@ -1177,10 +1170,6 @@ of this helper program; chances are you did not intend to run this program.\n\
 	    /* This image gets the ID one.  */
 	    GL(dl_tls_max_dtv_idx) = main_map->l_tls_modid = 1;
 	  }
-#else
-	_dl_fatal_printf ("\
-ld.so does not support TLS, but program uses it!\n");
-#endif
 	break;
 
       case PT_GNU_STACK:
@@ -1192,13 +1181,12 @@ ld.so does not support TLS, but program uses it!\n");
 	main_map->l_relro_size = ph->p_memsz;
 	break;
       }
-#ifdef USE_TLS
-    /* Adjust the address of the TLS initialization image in case
-       the executable is actually an ET_DYN object.  */
-    if (main_map->l_tls_initimage != NULL)
-      main_map->l_tls_initimage
-	= (char *) main_map->l_tls_initimage + main_map->l_addr;
-#endif
+
+  /* Adjust the address of the TLS initialization image in case
+     the executable is actually an ET_DYN object.  */
+  if (main_map->l_tls_initimage != NULL)
+    main_map->l_tls_initimage
+      = (char *) main_map->l_tls_initimage + main_map->l_addr;
   if (! main_map->l_map_end)
     main_map->l_map_end = ~0;
   if (! main_map->l_text_end)
@@ -1401,12 +1389,10 @@ ld.so does not support TLS, but program uses it!\n");
 	break;
       }
 
-#ifdef USE_TLS
   /* Add the dynamic linker to the TLS list if it also uses TLS.  */
   if (GL(dl_rtld_map).l_tls_blocksize != 0)
     /* Assign a module ID.  Do this before loading any audit modules.  */
     GL(dl_rtld_map).l_tls_modid = _dl_next_tls_modid ();
-#endif
 
   /* If we have auditing DSOs to load, do it now.  */
   if (__builtin_expect (audit_list != NULL, 0))
@@ -1416,7 +1402,6 @@ ld.so does not support TLS, but program uses it!\n");
       struct audit_list *al = audit_list->next;
       do
 	{
-#ifdef USE_TLS
 	  int tls_idx = GL(dl_tls_max_dtv_idx);
 
 	  /* Now it is time to determine the layout of the static TLS
@@ -1428,7 +1413,7 @@ ld.so does not support TLS, but program uses it!\n");
 	  /* Since we start using the auditing DSOs right away we need to
 	     initialize the data structures now.  */
 	  tcbp = init_tls ();
-#endif
+
 	  struct dlmopen_args dlmargs;
 	  dlmargs.fname = al->name;
 	  dlmargs.map = NULL;
@@ -1543,9 +1528,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 		  assert (GL(dl_ns)[ns]._ns_loaded == NULL);
 		  assert (GL(dl_ns)[ns]._ns_nloaded == 0);
 
-#ifdef USE_TLS
 		  GL(dl_tls_max_dtv_idx) = tls_idx;
-#endif
 		  goto not_loaded;
 		}
 	    }
@@ -1821,7 +1804,6 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
     _dl_receive_error (print_missing_version, version_check_doit, &args);
   }
 
-#ifdef USE_TLS
   /* We do not initialize any of the TLS functionality unless any of the
      initial modules uses TLS.  This makes dynamic loading of modules with
      TLS impossible, but to support it requires either eagerly doing setup
@@ -1832,7 +1814,6 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
   bool was_tls_init_tp_called = tls_init_tp_called;
   if (tcbp == NULL)
     tcbp = init_tls ();
-#endif
 
   /* Set up the stack checker's canary.  */
   uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard ();
@@ -1889,13 +1870,12 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 			  (size_t) l->l_map_start,
 			  (int) sizeof l->l_addr * 2,
 			  (size_t) l->l_addr);
-#ifdef USE_TLS
+
 	      if (l->l_tls_modid)
 		_dl_printf (" TLS(0x%Zx, 0x%0*Zx)\n", l->l_tls_modid,
 			    (int) sizeof l->l_tls_offset * 2,
 			    (size_t) l->l_tls_offset);
 	      else
-#endif
 		_dl_printf ("\n");
 	    }
 	}
@@ -1963,8 +1943,8 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 	    lookup_t result;
 
 	    result = _dl_lookup_symbol_x (INTUSE(_dl_argv)[i], main_map,
-					  &ref, main_map->l_scope, NULL,
-					  ELF_RTYPE_CLASS_PLT,
+					  &ref, main_map->l_scope,
+					  NULL, ELF_RTYPE_CLASS_PLT,
 					  DL_LOOKUP_ADD_DEPENDENCY, NULL);
 
 	    loadbase = LOOKUP_VALUE_ADDRESS (result);
@@ -2006,8 +1986,8 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 		{
 		  /* Mark the link map as not yet relocated again.  */
 		  GL(dl_rtld_map).l_relocated = 0;
-		  _dl_relocate_object (&GL(dl_rtld_map), main_map->l_scope,
-				       0, 0);
+		  _dl_relocate_object (&GL(dl_rtld_map),
+				       main_map->l_scope, 0, 0);
 		}
             }
 #define VERNEEDTAG (DT_NUM + DT_THISPROCNUM + DT_VERSIONTAGIDX (DT_VERNEED))
@@ -2087,7 +2067,8 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
     }
 
   if (main_map->l_info[ADDRIDX (DT_GNU_LIBLIST)]
-      && ! __builtin_expect (GLRO(dl_profile) != NULL, 0))
+      && ! __builtin_expect (GLRO(dl_profile) != NULL, 0)
+      && ! __builtin_expect (GLRO(dl_dynamic_weak), 0))
     {
       ElfW(Lib) *liblist, *liblistend;
       struct link_map **r_list, **r_listend, *l;
@@ -2142,7 +2123,6 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 
   /* Now set up the variable which helps the assembler startup code.  */
   GL(dl_ns)[LM_ID_BASE]._ns_main_searchlist = &main_map->l_searchlist;
-  GL(dl_ns)[LM_ID_BASE]._ns_global_scope[0] = &main_map->l_searchlist;
 
   /* Save the information about the original global scope list since
      we need it in the memory handling later.  */
@@ -2178,11 +2158,9 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 	  if (l->l_relro_size)
 	    _dl_protect_relro (l);
 
-#ifdef USE_TLS
 	  /* Add object to slot information data if necessasy.  */
 	  if (l->l_tls_blocksize != 0 && tls_init_tp_called)
 	    _dl_add_to_slotinfo (l);
-#endif
 	}
 
       _dl_sysdep_start_cleanup ();
@@ -2229,11 +2207,9 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 	    _dl_relocate_object (l, l->l_scope, GLRO(dl_lazy),
 				 consider_profiling);
 
-#ifdef USE_TLS
 	  /* Add object to slot information data if necessasy.  */
 	  if (l->l_tls_blocksize != 0 && tls_init_tp_called)
 	    _dl_add_to_slotinfo (l);
-#endif
 
 	  l = l->l_prev;
 	}
@@ -2262,7 +2238,6 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 # define NONTLS_INIT_TP do { } while (0)
 #endif
 
-#ifdef USE_TLS
   if (!was_tls_init_tp_called && GL(dl_tls_max_dtv_idx) > 0)
     ++GL(dl_tls_generation);
 
@@ -2280,9 +2255,6 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
 	_dl_fatal_printf ("cannot set up thread-local storage: %s\n",
 			  lossage);
     }
-#else
-  NONTLS_INIT_TP;
-#endif
 
   if (! prelinked && rtld_multiple_ref)
     {

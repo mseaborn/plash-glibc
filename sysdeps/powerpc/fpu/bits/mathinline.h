@@ -1,5 +1,5 @@
 /* Inline math functions for powerpc.
-   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2004, 2006
+   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2004, 2006, 2007
    Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -25,7 +25,7 @@
 #ifdef __cplusplus
 # define __MATH_INLINE __inline
 #else
-# define __MATH_INLINE extern __inline
+# define __MATH_INLINE __extern_inline
 #endif  /* __cplusplus */
 
 #if defined __GNUC__ && !defined _SOFT_FLOAT
@@ -121,62 +121,4 @@ __NTH (fdimf (float __x, float __y))
 
 #endif /* __USE_ISOC99 */
 #endif /* !__NO_MATH_INLINES && __OPTIMIZE__ */
-
-/* This code is used internally in the GNU libc.  */
-#ifdef __LIBC_INTERNAL_MATH_INLINES
-
-#include <sysdep.h>
-#include <ldsodefs.h>
-#include <dl-procinfo.h>
-
-# if __WORDSIZE == 64 || defined _ARCH_PWR4
-#  define __CPU_HAS_FSQRT 1
-# else
-#  define __CPU_HAS_FSQRT ((GLRO(dl_hwcap) & PPC_FEATURE_64) != 0)
-# endif
-
-extern double __slow_ieee754_sqrt (double);
-__MATH_INLINE double
-__NTH (__ieee754_sqrt (double __x))
-{
-  double __z;
-
-  /* If the CPU is 64-bit we can use the optional FP instructions.  */
-  if (__CPU_HAS_FSQRT)
-  {
-    /* Volatile is required to prevent the compiler from moving the
-       fsqrt instruction above the branch.  */
-     __asm __volatile (
-	"	fsqrt	%0,%1\n"
-		: "=f" (__z)
-		: "f" (__x));
-  }
-  else
-     __z = __slow_ieee754_sqrt(__x);
-
-  return __z;
-}
-
-extern float __slow_ieee754_sqrtf (float);
-__MATH_INLINE float
-__NTH (__ieee754_sqrtf (float __x))
-{
-  float __z;
-
-  /* If the CPU is 64-bit we can use the optional FP instructions.  */
-  if (__CPU_HAS_FSQRT)
-  {
-    /* Volatile is required to prevent the compiler from moving the
-       fsqrts instruction above the branch.  */
-     __asm __volatile (
-	"	fsqrts	%0,%1\n"
-		: "=f" (__z)
-		: "f" (__x));
-  }
-  else
-     __z = __slow_ieee754_sqrtf(__x);
-
-  return __z;
-}
-#endif /* __LIBC_INTERNAL_MATH_INLINES */
 #endif /* __GNUC__ && !_SOFT_FLOAT */

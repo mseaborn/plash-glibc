@@ -1,4 +1,5 @@
-/* Copyright (c) 1997-1999,2003,2004,2005,2006 Free Software Foundation, Inc.
+/* Copyright (c) 1997-1999, 2003, 2004, 2005, 2006, 2007
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Thorsten Kukuk <kukuk@suse.de>, 1997.
 
@@ -215,6 +216,7 @@ nis_list (const_nis_name name, unsigned int flags,
   char *tableptr;
   char *tablepath = NULL;
   int first_try = 0; /* Do we try the old binding at first ? */
+  nis_result *allres = NULL;
 
   if (res == NULL)
     return NULL;
@@ -223,6 +225,7 @@ nis_list (const_nis_name name, unsigned int flags,
     {
       status = NIS_BADNAME;
     err_out:
+      nis_freeresult (allres);
       memset (res, '\0', sizeof (nis_result));
       NIS_RES_STATUS (res) = status;
       return res;
@@ -272,20 +275,13 @@ nis_list (const_nis_name name, unsigned int flags,
       memset (res, '\0', sizeof (nis_result));
 
       status = __nisfind_server (ibreq->ibr_name,
-				 ibreq->ibr_srch.ibr_srch_val != NULL, &dir);
+				 ibreq->ibr_srch.ibr_srch_val != NULL,
+				 &dir, &bptr, flags & ~MASTER_ONLY);
       if (status != NIS_SUCCESS)
 	{
           NIS_RES_STATUS (res) = status;
           goto fail3;
 	}
-
-      status = __nisbind_create (&bptr, dir->do_servers.do_servers_val,
-				 dir->do_servers.do_servers_len, flags);
-      if (__builtin_expect (status != NIS_SUCCESS, 0))
-        {
-          NIS_RES_STATUS (res) = status;
-	  goto fail2;
-        }
 
       while (__nisbind_connect (&bptr) != NIS_SUCCESS)
 	if (__builtin_expect (__nisbind_next (&bptr) != NIS_SUCCESS, 0))
@@ -336,7 +332,6 @@ nis_list (const_nis_name name, unsigned int flags,
 		    NIS_RES_STATUS (res) = NIS_NOMEMORY;
 		  fail:
 		    __nisbind_destroy (&bptr);
-		  fail2:
 		    nis_free_directory (dir);
 		  fail3:
 		    free (tablepath);
@@ -349,6 +344,7 @@ nis_list (const_nis_name name, unsigned int flags,
 		    if (names != namebuf)
 		      nis_freenames (names);
 		    nis_free_request (ibreq);
+		    nis_freeresult (allres);
 		    return res;
 		  }
 		if (NIS_RES_OBJECT (res)->LI_data.li_attrs.li_attrs_len)
@@ -390,6 +386,57 @@ nis_list (const_nis_name name, unsigned int flags,
 		    memset (res, '\0', sizeof (*res));
 		    first_try = 1;
 		    goto again;
+		  }
+	      }
+	    else if ((flags & (FOLLOW_PATH | ALL_RESULTS))
+		     == (FOLLOW_PATH | ALL_RESULTS))
+	      {
+		if (allres == NULL)
+		  {
+		    allres = res;
+		    res = malloc (sizeof (nis_result));
+		    if (res == NULL)
+		      {
+			res = allres;
+			allres = NULL;
+			NIS_RES_STATUS (res) = NIS_NOMEMORY;
+			goto fail;
+		      }
+		    NIS_RES_STATUS (res) = NIS_RES_STATUS (allres);
+		  }
+		else
+		  {
+		    nis_object *objects_val
+		      = realloc (NIS_RES_OBJECT (allres),
+				 (NIS_RES_NUMOBJ (allres)
+				  + NIS_RES_NUMOBJ (res))
+				 * sizeof (nis_object));
+		    if (objects_val == NULL)
+		      {
+			NIS_RES_STATUS (res) = NIS_NOMEMORY;
+			goto fail;
+		      }
+		    NIS_RES_OBJECT (allres) = objects_val;
+		    memcpy (NIS_RES_OBJECT (allres) + NIS_RES_NUMOBJ (allres),
+			    NIS_RES_OBJECT (res),
+			    NIS_RES_NUMOBJ (res) * sizeof (nis_object));
+		    NIS_RES_NUMOBJ (allres) += NIS_RES_NUMOBJ (res);
+		    NIS_RES_NUMOBJ (res) = 0;
+		    free (NIS_RES_OBJECT (res));
+		    NIS_RES_OBJECT (res) = NULL;
+		    NIS_RES_STATUS (allres) = NIS_RES_STATUS (res);
+		    xdr_free ((xdrproc_t) _xdr_nis_result, (char *) res);
+		  }
+		clnt_status = __follow_path (&tablepath, &tableptr, ibreq,
+					     &bptr);
+		if (clnt_status != NIS_SUCCESS)
+		  {
+		    /* Prepare for the nis_freeresult call.  */
+		    memset (res, '\0', sizeof (*res));
+
+		    if (clnt_status == NIS_NOMEMORY)
+		      NIS_RES_STATUS (allres) = clnt_status;
+		    ++done;
 		  }
 	      }
 	    else
@@ -484,6 +531,12 @@ nis_list (const_nis_name name, unsigned int flags,
     nis_freenames (names);
 
   nis_free_request (ibreq);
+
+  if (allres)
+    {
+      nis_freeresult (res);
+      return allres;
+    }
 
   return res;
 }

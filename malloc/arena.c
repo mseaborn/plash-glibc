@@ -1,5 +1,6 @@
 /* Malloc implementation for multiple threads without lock contention.
-   Copyright (C) 2001,2002,2003,2004,2005,2006 Free Software Foundation, Inc.
+   Copyright (C) 2001,2002,2003,2004,2005,2006,2007
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Wolfram Gloger <wg@malloc.de>, 2001.
 
@@ -59,10 +60,12 @@ typedef struct _heap_info {
   mstate ar_ptr; /* Arena for this heap. */
   struct _heap_info *prev; /* Previous heap. */
   size_t size;   /* Current size in bytes. */
+  size_t mprotect_size;	/* Size in bytes that has been mprotected
+			   PROT_READ|PROT_WRITE.  */
   /* Make sure the following data is properly aligned, particularly
      that sizeof (heap_info) + 2 * SIZE_SZ is a multiple of
-     MALLOG_ALIGNMENT. */
-  char pad[-5 * SIZE_SZ & MALLOC_ALIGN_MASK];
+     MALLOC_ALIGNMENT. */
+  char pad[-6 * SIZE_SZ & MALLOC_ALIGN_MASK];
 } heap_info;
 
 /* Get a compile-time error if the heap_info padding is not correct
@@ -149,7 +152,7 @@ int __malloc_initialized = -1;
 
 static __malloc_ptr_t (*save_malloc_hook) (size_t __size,
 					   __const __malloc_ptr_t);
-# if !defined _LIBC || !defined USE_TLS || (defined SHARED && !USE___THREAD)
+# if !defined _LIBC || (defined SHARED && !USE___THREAD)
 static __malloc_ptr_t (*save_memalign_hook) (size_t __align, size_t __size,
 					     __const __malloc_ptr_t);
 # endif
@@ -367,6 +370,9 @@ ptmalloc_init_minimal (void)
   mp_.top_pad        = DEFAULT_TOP_PAD;
 #endif
   mp_.n_mmaps_max    = DEFAULT_MMAP_MAX;
+#if MALLOC_DEBUG
+  mp_.n_mmaps_cmax   = DEFAULT_MMAP_MAX;
+#endif
   mp_.mmap_threshold = DEFAULT_MMAP_THRESHOLD;
   mp_.trim_threshold = DEFAULT_TRIM_THRESHOLD;
   mp_.pagesize       = malloc_getpagesize;
@@ -385,7 +391,7 @@ extern struct dl_open_hook *_dl_open_hook;
 libc_hidden_proto (_dl_open_hook);
 # endif
 
-# if defined SHARED && defined USE_TLS && !USE___THREAD
+# if defined SHARED && !USE___THREAD
 /* This is called by __pthread_initialize_minimal when it needs to use
    malloc to set up the TLS state.  We cannot do the full work of
    ptmalloc_init (below) until __pthread_initialize_minimal has finished,
@@ -428,7 +434,7 @@ ptmalloc_init (void)
   __malloc_initialized = 0;
 
 #ifdef _LIBC
-# if defined SHARED && defined USE_TLS && !USE___THREAD
+# if defined SHARED && !USE___THREAD
   /* ptmalloc_init_minimal may already have been called via
      __libc_malloc_pthread_startup, above.  */
   if (mp_.pagesize == 0)
@@ -437,7 +443,7 @@ ptmalloc_init (void)
     ptmalloc_init_minimal();
 
 #ifndef NO_THREADS
-# if defined _LIBC && defined USE_TLS
+# if defined _LIBC
   /* We know __pthread_initialize_minimal has already been called,
      and that is enough.  */
 #   define NO_STARTER
@@ -692,6 +698,7 @@ new_heap(size, top_pad) size_t size, top_pad;
   }
   h = (heap_info *)p2;
   h->size = size;
+  h->mprotect_size = size;
   THREAD_STAT(stat_n_heaps++);
   return h;
 }
@@ -714,17 +721,34 @@ grow_heap(h, diff) heap_info *h; long diff;
     new_size = (long)h->size + diff;
     if((unsigned long) new_size > (unsigned long) HEAP_MAX_SIZE)
       return -1;
-    if(mprotect((char *)h + h->size, diff, PROT_READ|PROT_WRITE) != 0)
-      return -2;
+    if((unsigned long) new_size > h->mprotect_size) {
+      if (mprotect((char *)h + h->mprotect_size,
+		   (unsigned long) new_size - h->mprotect_size,
+		   PROT_READ|PROT_WRITE) != 0)
+	return -2;
+      h->mprotect_size = new_size;
+    }
   } else {
     new_size = (long)h->size + diff;
     if(new_size < (long)sizeof(*h))
       return -1;
     /* Try to re-map the extra heap space freshly to save memory, and
        make it inaccessible. */
-    if((char *)MMAP((char *)h + new_size, -diff, PROT_NONE,
-                    MAP_PRIVATE|MAP_FIXED) == (char *) MAP_FAILED)
-      return -2;
+#ifdef _LIBC
+    if (__builtin_expect (__libc_enable_secure, 0))
+#else
+    if (1)
+#endif
+      {
+	if((char *)MMAP((char *)h + new_size, -diff, PROT_NONE,
+			MAP_PRIVATE|MAP_FIXED) == (char *) MAP_FAILED)
+	  return -2;
+	h->mprotect_size = new_size;
+      }
+#ifdef _LIBC
+    else
+      madvise ((char *)h + new_size, -diff, MADV_DONTNEED);
+#endif
     /*fprintf(stderr, "shrink %p %08lx\n", h, new_size);*/
   }
   h->size = new_size;

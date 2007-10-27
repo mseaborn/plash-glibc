@@ -1,4 +1,5 @@
-/* Copyright (C) 1991,1992,1995-2004,2005,2006 Free Software Foundation, Inc.
+/* Copyright (C) 1991, 1992, 1995-2004, 2005, 2006, 2007
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -27,11 +28,12 @@
 
 #include <bits/types.h>		/* For __mode_t and __dev_t.  */
 
-#if defined __USE_XOPEN || defined __USE_MISC
+#if defined __USE_XOPEN || defined __USE_XOPEN2K || defined __USE_MISC \
+         || defined __USE_ATFILE
 # if defined __USE_XOPEN || defined __USE_XOPEN2K
 #  define __need_time_t
 # endif
-# ifdef __USE_MISC
+# if defined __USE_MISC || defined __USE_ATFILE
 #  define __need_timespec
 # endif
 # include <time.h>		/* For time_t resp. timespec.  */
@@ -353,6 +355,21 @@ extern int mkfifoat (int __fd, __const char *__path, __mode_t __mode)
      __THROW __nonnull ((2));
 #endif
 
+#ifdef __USE_ATFILE
+/* Set file access and modification times relative to directory file
+   descriptor.  */
+extern int utimensat (int __fd, __const char *__path,
+		      __const struct timespec __times[2],
+		      int __flags)
+     __THROW __nonnull ((2));
+#endif
+
+#ifdef __USE_GNU
+/* XXX This will change to the macro for the next 2008 POSIX revision.  */
+/* Set file access and modification times of the file associated with FD.  */
+extern int futimens (int __fd, __const struct timespec __times[2]) __THROW;
+#endif
+
 /* To allow the `struct stat' structure and the file type `mode_t'
    bits to vary without changing shared library major version number,
    the `stat' family of functions and `mknod' are in fact inline
@@ -430,28 +447,28 @@ extern int __xmknodat (int __ver, int __fd, __const char *__path,
 #if defined __GNUC__ && __GNUC__ >= 2
 /* Inlined versions of the real stat and mknod functions.  */
 
-extern __inline__ int
+__extern_inline int
 __NTH (stat (__const char *__path, struct stat *__statbuf))
 {
   return __xstat (_STAT_VER, __path, __statbuf);
 }
 
 # if defined __USE_BSD || defined __USE_XOPEN_EXTENDED
-extern __inline__ int
+__extern_inline int
 __NTH (lstat (__const char *__path, struct stat *__statbuf))
 {
   return __lxstat (_STAT_VER, __path, __statbuf);
 }
 # endif
 
-extern __inline__ int
+__extern_inline int
 __NTH (fstat (int __fd, struct stat *__statbuf))
 {
   return __fxstat (_STAT_VER, __fd, __statbuf);
 }
 
 # ifdef __USE_ATFILE
-extern __inline__ int
+__extern_inline int
 __NTH (fstatat (int __fd, __const char *__filename, struct stat *__statbuf,
 		int __flag))
 {
@@ -460,7 +477,7 @@ __NTH (fstatat (int __fd, __const char *__filename, struct stat *__statbuf,
 # endif
 
 # if defined __USE_MISC || defined __USE_BSD
-extern __inline__ int
+__extern_inline int
 __NTH (mknod (__const char *__path, __mode_t __mode, __dev_t __dev))
 {
   return __xmknod (_MKNOD_VER, __path, __mode, &__dev);
@@ -468,7 +485,7 @@ __NTH (mknod (__const char *__path, __mode_t __mode, __dev_t __dev))
 # endif
 
 # ifdef __USE_ATFILE
-extern __inline__ int
+__extern_inline int
 __NTH (mknodat (int __fd, __const char *__path, __mode_t __mode,
 		__dev_t __dev))
 {
@@ -479,28 +496,28 @@ __NTH (mknodat (int __fd, __const char *__path, __mode_t __mode,
 # if defined __USE_LARGEFILE64 \
   && (! defined __USE_FILE_OFFSET64 \
       || (defined __REDIRECT_NTH && defined __OPTIMIZE__))
-extern __inline__ int
+__extern_inline int
 __NTH (stat64 (__const char *__path, struct stat64 *__statbuf))
 {
   return __xstat64 (_STAT_VER, __path, __statbuf);
 }
 
 #  if defined __USE_BSD || defined __USE_XOPEN_EXTENDED
-extern __inline__ int
+__extern_inline int
 __NTH (lstat64 (__const char *__path, struct stat64 *__statbuf))
 {
   return __lxstat64 (_STAT_VER, __path, __statbuf);
 }
 #  endif
 
-extern __inline__ int
+__extern_inline int
 __NTH (fstat64 (int __fd, struct stat64 *__statbuf))
 {
   return __fxstat64 (_STAT_VER, __fd, __statbuf);
 }
 
 #  ifdef __USE_GNU
-extern __inline__ int
+__extern_inline int
 __NTH (fstatat64 (int __fd, __const char *__filename, struct stat64 *__statbuf,
 		  int __flag))
 {

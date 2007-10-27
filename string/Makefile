@@ -1,4 +1,4 @@
-# Copyright (C) 1991-2002, 2005, 2006 Free Software Foundation, Inc.
+# Copyright (C) 1991-2002, 2005, 2006, 2007 Free Software Foundation, Inc.
 # This file is part of the GNU C Library.
 
 # The GNU C Library is free software; you can redistribute it and/or
@@ -40,7 +40,7 @@ routines	:= strcat strchr strcmp strcoll strcpy strcspn		\
 				     addsep replace)			\
 		   envz basename					\
 		   strcoll_l strxfrm_l string-inlines memrchr		\
-		   xpg-strerror
+		   xpg-strerror strerror_l
 
 # Gcc internally generates calls to unbounded memcpy and memset
 # for -fbounded-pointer compiles.  Glibc uses memchr for explicit checks.
@@ -54,7 +54,7 @@ tests		:= tester inl-tester noinl-tester testcopy test-ffs	\
 		   bug-strncat1 bug-strspn1 bug-strpbrk1 tst-bswap	\
 		   tst-strtok tst-strxfrm bug-strcoll1 tst-strfry	\
 		   bug-strtok1 $(addprefix test-,$(strop-tests))	\
-		   bug-envz1
+		   bug-envz1 tst-strxfrm2
 distribute	:= memcopy.h pagecopy.h tst-svc.expect test-string.h
 
 
@@ -64,6 +64,7 @@ tester-ENV = LANGUAGE=C
 inl-tester-ENV = LANGUAGE=C
 noinl-tester-ENV = LANGUAGE=C
 tst-strxfrm-ENV = LOCPATH=$(common-objpfx)localedata
+tst-strxfrm2-ENV = LOCPATH=$(common-objpfx)localedata
 bug-strcoll1-ENV = LOCPATH=$(common-objpfx)localedata
 CFLAGS-inl-tester.c = -fno-builtin
 CFLAGS-noinl-tester.c = -fno-builtin

@@ -1,4 +1,4 @@
-# Copyright (C) 1992-2002,2003,2005,2006 Free Software Foundation, Inc.
+# Copyright (C) 1992-2002,2003,2005,2006, 2007 Free Software Foundation, Inc.
 # This file is part of the GNU C Library.
 
 # The GNU C Library is free software; you can redistribute it and/or
@@ -51,7 +51,8 @@ routines :=								\
 	ftw ftw64 fts poll ppoll					\
 	posix_fadvise posix_fadvise64					\
 	posix_fallocate posix_fallocate64				\
-	sendfile sendfile64
+	sendfile sendfile64 \
+	utimensat futimens
 
 # These routines will be omitted from the libc shared object.
 # Instead the static object files will be included in a special archive
@@ -66,7 +67,7 @@ tests		:= test-utime test-stat test-stat2 test-lfs tst-getcwd \
 		   tst-openat tst-unlinkat tst-fstatat tst-futimesat \
 		   tst-renameat tst-fchownat tst-fchmodat tst-faccessat \
 		   tst-symlinkat tst-linkat tst-readlinkat tst-mkdirat \
-		   tst-mknodat tst-mkfifoat
+		   tst-mknodat tst-mkfifoat tst-ttyname_r bug-ftw5
 
 distribute	:= ftwtest-sh
 
@@ -89,19 +90,6 @@ CFLAGS-posix_fallocate64.c = -fexceptions
 
 CFLAGS-test-stat.c = -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE
 CFLAGS-test-lfs.c = -D_LARGEFILE64_SOURCE
-
-ifeq (yes,$(have-protected))
-CFLAGS-stat.c = -DHAVE_DOT_HIDDEN
-CFLAGS-fstat.c = -DHAVE_DOT_HIDDEN
-CFLAGS-lstat.c = -DHAVE_DOT_HIDDEN
-CFLAGS-mknod.c = -DHAVE_DOT_HIDDEN
-CFLAGS-stat64.c = -DHAVE_DOT_HIDDEN
-CFLAGS-fstat64.c = -DHAVE_DOT_HIDDEN
-CFLAGS-lstat64.c = -DHAVE_DOT_HIDDEN
-CFLAGS-fstatat.c = -DHAVE_DOT_HIDDEN
-CFLAGS-fstatat64.c = -DHAVE_DOT_HIDDEN
-CFLAGS-mknodat.c = -DHAVE_DOT_HIDDEN
-endif
 
 test-stat2-ARGS = Makefile . $(objpfx)test-stat2
 

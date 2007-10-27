@@ -1,4 +1,4 @@
-/* Copyright (C) 2003, 2004, 2005, 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2003, 2004, 2005, 2006, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2003.
 
@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <setjmp.h>
 #include <internaltypes.h>
+#include <sysdep.h>
 
 struct xid_command;
 
@@ -96,9 +97,22 @@ struct pthread_functions
   void (*ptr__nptl_deallocate_tsd) (void);
   int (*ptr__nptl_setxid) (struct xid_command *);
   void (*ptr_freeres) (void);
+  void (*ptr_wait_lookup_done) (int);
 };
 
 /* Variable in libc.so.  */
 extern struct pthread_functions __libc_pthread_functions attribute_hidden;
+extern int __libc_pthread_functions_init attribute_hidden;
+
+#ifdef PTR_DEMANGLE
+# define PTHFCT_CALL(fct, params) \
+  ({ __typeof (__libc_pthread_functions.fct) __p;			      \
+     __p = __libc_pthread_functions.fct;				      \
+     PTR_DEMANGLE (__p);						      \
+     __p params; })
+#else
+# define PTHFCT_CALL(fct, params) \
+  __libc_pthread_functions.fct params
+#endif
 
 #endif	/* pthread-functions.h */

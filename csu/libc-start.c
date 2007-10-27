@@ -1,4 +1,4 @@
-/* Copyright (C) 1998-2003, 2004, 2005 Free Software Foundation, Inc.
+/* Copyright (C) 1998-2006, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -30,11 +30,7 @@ extern int __libc_multiple_libcs;
 #include <tls.h>
 #ifndef SHARED
 # include <dl-osinfo.h>
-extern void __pthread_initialize_minimal (void)
-# if !(USE_TLS - 0) && !defined NONTLS_INIT_TP
-     __attribute__ ((weak))
-# endif
-     ;
+extern void __pthread_initialize_minimal (void);
 # ifndef THREAD_SET_STACK_GUARD
 /* Only exported for architectures that don't store the stack guard canary
    in thread local area.  */
@@ -140,13 +136,8 @@ LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
 
   /* Initialize the thread library at least a bit since the libgcc
      functions are using thread functions if these are available and
-     we need to setup errno.  If there is no thread library and we
-     handle TLS the function is defined in the libc to initialized the
-     TLS handling.  */
-# if !(USE_TLS - 0) && !defined NONTLS_INIT_TP
-  if (__pthread_initialize_minimal)
-# endif
-    __pthread_initialize_minimal ();
+     we need to setup errno.  */
+  __pthread_initialize_minimal ();
 #endif
 
 # ifndef SHARED
@@ -234,7 +225,7 @@ LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
     {
       /* Remove the thread-local data.  */
 # ifdef SHARED
-      __libc_pthread_functions.ptr__nptl_deallocate_tsd ();
+      PTHFCT_CALL (ptr__nptl_deallocate_tsd, ());
 # else
       extern void __nptl_deallocate_tsd (void) __attribute ((weak));
       __nptl_deallocate_tsd ();
@@ -244,7 +235,8 @@ LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
 	 terminate the entire process.  */
       result = 0;
 # ifdef SHARED
-      unsigned int *const ptr = __libc_pthread_functions.ptr_nthreads;
+      unsigned int *ptr = __libc_pthread_functions.ptr_nthreads;
+      PTR_DEMANGLE (ptr);
 # else
       extern unsigned int __nptl_nthreads __attribute ((weak));
       unsigned int *const ptr = &__nptl_nthreads;

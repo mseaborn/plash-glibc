@@ -1,5 +1,5 @@
 /* This file defines standard ELF types, structures, and macros.
-   Copyright (C) 1995-2003,2004,2005,2006 Free Software Foundation, Inc.
+   Copyright (C) 1995-2003,2004,2005,2006,2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -603,6 +603,7 @@ typedef struct
 #define NT_LWPSTATUS	16		/* Contains copy of lwpstatus struct */
 #define NT_LWPSINFO	17		/* Contains copy of lwpinfo struct */
 #define NT_PRFPXREG	20		/* Contains copy of fprxregset struct*/
+#define NT_PRXFPREG	0x46e62b7f	/* Contains copy of user_fxsr_struct*/
 
 /* Legal values for the note segment descriptor types for object files.  */
 
@@ -1511,8 +1512,9 @@ typedef struct
 #define R_MIPS_TLS_TPREL64	48	/* TP-relative offset, 64 bit */
 #define R_MIPS_TLS_TPREL_HI16	49	/* TP-relative offset, high 16 bits */
 #define R_MIPS_TLS_TPREL_LO16	50	/* TP-relative offset, low 16 bits */
+#define R_MIPS_GLOB_DAT		51
 /* Keep this the last entry.  */
-#define R_MIPS_NUM		51
+#define R_MIPS_NUM		52
 
 /* Legal values for p_type field of Elf32_Phdr.  */
 

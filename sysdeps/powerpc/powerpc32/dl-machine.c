@@ -1,5 +1,5 @@
 /* Machine-dependent ELF dynamic relocation functions.  PowerPC version.
-   Copyright (C) 1995-2003, 2004, 2005 Free Software Foundation, Inc.
+   Copyright (C) 1995-2003, 2004, 2005, 2006 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -26,10 +26,9 @@
 #include <dl-machine.h>
 #include <stdio-common/_itoa.h>
 
-/* The value __cache_line_size is defined in memset.S and is initialised
+/* The value __cache_line_size is defined in dl-sysdep.c and is initialised
    by _dl_sysdep_start via DL_PLATFORM_INIT.  */
-extern int __cache_line_size;
-weak_extern (__cache_line_size)
+extern int __cache_line_size attribute_hidden;
 
 /* Because ld.so is now versioned, these functions can be in their own file;
    no relocations need to be done to call them.
@@ -318,15 +317,9 @@ __elf_machine_runtime_setup (struct link_map *map, int lazy, int profile)
       /* Default minimum 4 words per cache line.  */
       int line_size_words = 4;
 
-      /* Don't try this until ld.so has relocated itself!  */
-      int *line_size_ptr = &__cache_line_size;
-      if (lazy && line_size_ptr != NULL)
-	{
-	  /*  Verify that __cache_line_size is defined and set.  */
-	  if (*line_size_ptr != 0)
-	    /* Convert bytes to words.  */
-	    line_size_words = *line_size_ptr / 4;
-	}
+      if (lazy && __cache_line_size != 0)
+	/* Convert bytes to words.  */
+	line_size_words = __cache_line_size / 4;
 
       size_modified = lazy ? rel_offset_words : 6;
       for (i = 0; i < size_modified; i += line_size_words)
@@ -564,13 +557,12 @@ __process_machine_rela (struct link_map *map,
       }
       break;
 
-#ifdef USE_TLS
 #define CHECK_STATIC_TLS(map, sym_map)					      \
     do {								      \
       if (__builtin_expect ((sym_map)->l_tls_offset == NO_TLS_OFFSET, 0))     \
 	_dl_allocate_static_tls (sym_map);				      \
     } while (0)
-# define DO_TLS_RELOC(suffix)						      \
+#define DO_TLS_RELOC(suffix)						      \
     case R_PPC_DTPREL##suffix:						      \
       /* During relocation all TLS symbols are defined and used.	      \
 	 Therefore the offset is already correct.  */			      \
@@ -609,7 +601,6 @@ __process_machine_rela (struct link_map *map,
     DO_TLS_RELOC (16_LO)
     DO_TLS_RELOC (16_HI)
     DO_TLS_RELOC (16_HA)
-#endif
 
     default:
       _dl_reloc_bad_type (map, rinfo, 0);
