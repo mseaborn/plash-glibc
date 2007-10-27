@@ -30,6 +30,9 @@ ld {
   GLIBC_2.0 {
     # Function from libc.so which must be shared with libc.
     calloc; free; malloc; realloc; __libc_memalign;
+    # Functions that are weakly defined, to be overridden by libpthread.so.
+    pthread_mutex_lock;
+    pthread_mutex_unlock;
 
     _r_debug;
   }

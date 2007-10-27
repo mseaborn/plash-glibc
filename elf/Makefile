@@ -38,7 +38,8 @@ shared-only-routines += dl-caller
 
 # ld.so uses those routines, plus some special stuff for being the program
 # interpreter and operating independent of libc.
-rtld-routines	:= rtld $(dl-routines) dl-sysdep dl-environ dl-minimal
+rtld-routines	:= rtld $(dl-routines) dl-sysdep dl-environ dl-minimal \
+		   dl-thread
 all-rtld-routines = $(rtld-routines) $(sysdep-rtld-routines)
 
 distribute	:= rtld-Rules \
