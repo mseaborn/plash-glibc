@@ -35,7 +35,7 @@
 
 /* Get information about the file FD in BUF.  */
 int
-__fxstat (int vers, int fd, struct stat *buf)
+kernel_fxstat (int vers, int fd, struct stat *buf)
 {
   if (vers == _STAT_VER_KERNEL)
     return INLINE_SYSCALL (fstat, 2, fd, CHECK_1 ((struct kernel_stat *) buf));
@@ -55,10 +55,14 @@ __fxstat (int vers, int fd, struct stat *buf)
 #endif
 }
 
+#if 0
+
 hidden_def (__fxstat)
 weak_alias (__fxstat, _fxstat);
 #ifdef XSTAT_IS_XSTAT64
 #undef __fxstat64
 strong_alias (__fxstat, __fxstat64);
 hidden_ver (__fxstat, __fxstat64)
+#endif
+
 #endif

@@ -13,4 +13,4 @@ stime		-	stime		i:p	stime
 time		-	time		Ei:P	time
 times		-	times		i:p	__times	times
 ulimit		-	ulimit		i:ii	ulimit
-utime		-	utime		i:sP	utime
+#utime		-	utime		i:sP	utime

@@ -38,13 +38,15 @@
 #ifdef __NR_stat64
 # if  __ASSUME_STAT64_SYSCALL == 0
 /* The variable is shared between all wrappers around *stat64 calls.  */
-extern int __have_no_stat64;
+//extern int __have_no_stat64;
 # endif
 #endif
 
+static int __have_no_stat64;
+
 /* Get information about the file FD in BUF.  */
 int
-__fxstat (int vers, int fd, struct stat *buf)
+kernel_fxstat (int vers, int fd, struct stat *buf)
 {
 #if __ASSUME_STAT64_SYSCALL == 0
   struct kernel_stat kbuf;
@@ -92,10 +94,14 @@ __fxstat (int vers, int fd, struct stat *buf)
 #endif  /* __ASSUME_STAT64_SYSCALL  */
 }
 
+#if 0
+
 hidden_def (__fxstat)
 weak_alias (__fxstat, _fxstat);
 #ifdef XSTAT_IS_XSTAT64
 #undef __fxstat64
 strong_alias (__fxstat, __fxstat64);
 hidden_ver (__fxstat, __fxstat64)
+#endif
+
 #endif

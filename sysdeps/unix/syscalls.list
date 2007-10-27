@@ -1,15 +1,16 @@
 # File name	Caller	Syscall name	Args	Strong name	Weak names
 
-access		-	access		i:si	__access	access
+#access		-	access		i:si	__access	access
 acct		-	acct		i:S	acct
-chdir		-	chdir		i:s	__chdir		chdir
-chmod		-	chmod		i:si	__chmod		chmod
-chown		-	chown		i:sii	__chown		__chown_internal chown
+#chdir		-	chdir		i:s	__chdir		chdir
+#chmod		-	chmod		i:si	__chmod		chmod
+#chown		-	chown		i:sii	__chown		__chown_internal chown
 chroot		-	chroot		i:s	chroot
-close		-	close		Ci:i	__libc_close	__close close
+kernel_close		-	close		Ci:i	kernel_close
+kernel_dup		-	dup		i:i	kernel_dup
 dup		-	dup		i:i	__dup		dup
-dup2		-	dup2		i:ii	__dup2		dup2
-fchdir		-	fchdir		i:i	__fchdir	fchdir
+kernel_dup2		-	dup2		i:ii	kernel_dup2
+#fchdir		-	fchdir		i:i	__fchdir	fchdir
 fcntl		-	fcntl		Ci:iiF	__libc_fcntl	__fcntl __fcntl_internal fcntl
 fstatfs		-	fstatfs		i:ip	__fstatfs	fstatfs
 fsync		-	fsync		Ci:i	__libc_fsync	fsync
@@ -23,18 +24,19 @@ getrlimit	-	getrlimit	i:ip	__getrlimit	getrlimit
 getuid		-	getuid		Ei:	__getuid	getuid
 ioctl		-	ioctl		i:iiI	__ioctl		ioctl
 kill		-	kill		i:ii	__kill		kill
-link		-	link		i:ss	__link		link
+#link		-	link		i:ss	__link		link
 lseek		-	lseek		i:iii	__libc_lseek	__lseek lseek
-mkdir		-	mkdir		i:si	__mkdir		mkdir
-open		-	open		Ci:siv	__libc_open __open open
+#mkdir		-	mkdir		i:si	__mkdir		mkdir
+#open		-	open		Ci:siv	__libc_open __open open
+#kernel_open		-	open		Ci:siv	kernel_open
 profil		-	profil		i:piii	__profil	profil
 ptrace		-	ptrace		i:iiii	ptrace
 read		-	read		Ci:ibn	__libc_read	__read read
-readlink	-	readlink	i:spi	__readlink	readlink
+#readlink	-	readlink	i:spi	__readlink	readlink
 readv		-	readv		Ci:ipi	__readv		readv
 reboot		-	reboot		i:i	reboot
-rename		-	rename		i:ss	rename
-rmdir		-	rmdir		i:s	__rmdir		rmdir
+#rename		-	rename		i:ss	rename
+#rmdir		-	rmdir		i:s	__rmdir		rmdir
 select		-	select		Ci:iPPPP	__select	__libc_select select
 setdomain	-	setdomainname	i:si	setdomainname
 setegid		-	setegid		i:i	__setegid	setegid
@@ -60,6 +62,6 @@ sys_stat	xstat	stat		i:sp	__syscall_stat
 umask		-	umask		Ei:i	__umask		umask
 uname		-	uname		i:p	__uname		uname
 unlink		-	unlink		i:s	__unlink	unlink
-utimes		-	utimes		i:sp	__utimes	utimes
+#utimes		-	utimes		i:sp	__utimes	utimes
 write		-	write		Ci:ibn	__libc_write	__write write
 writev		-	writev		Ci:ipi	__writev	writev

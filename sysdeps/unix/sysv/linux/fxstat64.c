@@ -35,14 +35,16 @@
 #ifdef __NR_fstat64
 # if  __ASSUME_STAT64_SYSCALL == 0
 /* The variable is shared between all wrappers around *stat64 calls.  */
-extern int __have_no_stat64;
+//extern int __have_no_stat64;
 # endif
 #endif
+
+static int __have_no_stat64;
 
 /* Get information about the file FD in BUF.  */
 
 int
-___fxstat64 (int vers, int fd, struct stat64 *buf)
+kernel_fxstat64 (int vers, int fd, struct stat64 *buf)
 {
   int result;
 #if __ASSUME_STAT64_SYSCALL > 0
@@ -81,6 +83,8 @@ ___fxstat64 (int vers, int fd, struct stat64 *buf)
 #endif
 }
 
+#if 0
+
 #include <shlib-compat.h>
 
 #if SHLIB_COMPAT(libc, GLIBC_2_1, GLIBC_2_2)
@@ -91,4 +95,6 @@ hidden_ver (___fxstat64, __fxstat64)
 #else
 strong_alias (___fxstat64, __fxstat64)
 hidden_def (__fxstat64)
+#endif
+
 #endif

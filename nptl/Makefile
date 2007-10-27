@@ -102,10 +102,10 @@ libpthread-routines = init vars events version \
 		      cancellation \
 		      lowlevellock lowlevelrobustlock \
 		      pt-vfork \
-		      ptw-write ptw-read ptw-close ptw-fcntl ptw-accept \
-		      ptw-connect ptw-recv ptw-recvfrom ptw-recvmsg ptw-send \
+		      ptw-write ptw-read ptw-fcntl \
+		      ptw-recv ptw-recvfrom ptw-recvmsg ptw-send \
 		      ptw-sendmsg ptw-sendto ptw-fsync ptw-lseek ptw-llseek \
-		      ptw-msync ptw-nanosleep ptw-open ptw-open64 ptw-pause \
+		      ptw-msync ptw-nanosleep ptw-pause \
 		      ptw-pread ptw-pread64 ptw-pwrite ptw-pwrite64 \
 		      ptw-tcdrain ptw-wait ptw-waitpid ptw-msgrcv ptw-msgsnd \
 		      ptw-sigwait ptw-sigsuspend \
@@ -123,7 +123,8 @@ libpthread-routines = init vars events version \
 		      pthread_mutexattr_setprotocol \
 		      pthread_mutexattr_getprioceiling \
 		      pthread_mutexattr_setprioceiling tpp \
-		      pthread_mutex_getprioceiling pthread_mutex_setprioceiling
+		      pthread_mutex_getprioceiling pthread_mutex_setprioceiling \
+		      libpthread-extras
 #		      pthread_setuid pthread_seteuid pthread_setreuid \
 #		      pthread_setresuid \
 #		      pthread_setgid pthread_setegid pthread_setregid \
