@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2004, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -38,11 +38,7 @@ __pthread_getschedparam (threadid, policy, param)
 
   int result = 0;
 
-  /* We have to handle cancellation in the following code since we are
-     locking another threads descriptor.  */
-  pthread_cleanup_push ((void (*) (void *)) lll_unlock_wake_cb, &pd->lock);
-
-  lll_lock (pd->lock);
+  lll_lock (pd->lock, LLL_PRIVATE);
 
   /* The library is responsible for maintaining the values at all
      times.  If the user uses a interface other than
@@ -72,9 +68,7 @@ __pthread_getschedparam (threadid, policy, param)
       memcpy (param, &pd->schedparam, sizeof (struct sched_param));
     }
 
-  lll_unlock (pd->lock);
-
-  pthread_cleanup_pop (0);
+  lll_unlock (pd->lock, LLL_PRIVATE);
 
   return result;
 }

@@ -58,7 +58,8 @@ modules	:= ISO8859-1 ISO8859-2 ISO8859-3 ISO8859-4 ISO8859-5		 \
 	   IBM1142 IBM1143 IBM1144 IBM1145 IBM1146 IBM1147 IBM1148 	 \
 	   IBM1149 IBM1166 IBM1167 IBM4517 IBM4899 IBM4909 IBM4971 	 \
 	   IBM5347 IBM9030 IBM9066 IBM9448 IBM12712 IBM16804             \
-	   IBM1364 IBM1371 IBM1388 IBM1390 IBM1399 ISO_11548-1 MIK BRF
+	   IBM1364 IBM1371 IBM1388 IBM1390 IBM1399 ISO_11548-1 MIK BRF	 \
+	   MAC-CENTRALEUROPE KOI8-RU ISO8859-9E
 
 modules.so := $(addsuffix .so, $(modules))
 
@@ -66,7 +67,7 @@ include ../Makeconfig
 
 ifeq (yes,$(build-shared))
 tests = bug-iconv1 bug-iconv2 tst-loading tst-e2big tst-iconv4 bug-iconv4 \
-	tst-iconv6
+	tst-iconv6 bug-iconv5
 ifeq ($(have-thread-library),yes)
 tests += bug-iconv3
 endif
@@ -165,7 +166,7 @@ distribute := gconv-modules extra-module.mk gap.awk gaptab.awk gconv.map    \
 	      inis-cyrillic.c iso-2022-jp.c iso-2022-kr.c iso646.c	    \
 	      iso8859-1.c iso8859-2.c iso8859-3.c iso8859-4.c iso8859-5.c   \
 	      iso8859-6.c iso8859-7.c iso8859-8.c iso8859-9.c iso8859-10.c  \
-	      iso8859-11.c iso8859-13.c iso8859-14.c			    \
+	      iso8859-11.c iso8859-13.c iso8859-14.c iso8859-9e.c	    \
 	      iso8859-15.c iso_2033.c iso_5427-ext.c iso_5427.c iso_5428.c  \
 	      iso_6937.c iso_6937-2.c iso_10367-box.c jis0201.c jis0201.h   \
 	      jis0208.c jis0208.h jis0212.c jis0212.h johab.c koi-8.c	    \
@@ -197,7 +198,7 @@ distribute := gconv-modules extra-module.mk gap.awk gaptab.awk gconv.map    \
 	      ibm12712.c ibm12712.h ibm16804.c ibm16804.h                   \
 	      ibm1364.c ibm1364.h ibm1371.c ibm1371.h ibm1388.c ibm1388.h   \
 	      ibm1390.c ibm1390.h ibm1399.c ibm1399.h iso_11548-1.c mik.c   \
-	      brf.c
+	      brf.c mac-centraleurope.c
 
 # We build the transformation modules only when we build shared libs.
 ifeq (yes,$(build-shared))
@@ -221,7 +222,8 @@ gen-8bit-modules := iso8859-2 iso8859-3 iso8859-4 iso8859-6 iso8859-9 koi-8 \
 		    ebcdic-es-s ebcdic-fi-se ebcdic-fi-se-a ebcdic-fr	    \
 		    ebcdic-is-friss ebcdic-it ebcdic-pt ebcdic-uk ebcdic-us \
 		    ibm037 ibm038 ibm274 ibm275 ibm423 ibm500 ibm870 ibm871 \
-		    ibm891 ibm903 ibm904 ibm905 ibm1047 iso8859-16 viscii
+		    ibm891 ibm903 ibm904 ibm905 ibm1047 iso8859-16 viscii   \
+		    iso8859-9e
 
 gen-8bit-gap-modules := koi8-r latin-greek latin-greek-1 ibm256 ibm273	   \
 			ibm277 ibm278 ibm280 ibm281 ibm284 ibm285 ibm290   \
@@ -238,7 +240,8 @@ gen-8bit-gap-modules := koi8-r latin-greek latin-greek-1 ibm256 ibm273	   \
 			iso8859-13 iso8859-14 iso8859-15 mac-uk sami-ws2   \
 			iso-ir-197 tis-620 koi8-u ibm874 cp10007 koi8-t	   \
 			georgian-ps georgian-academy iso-ir-209 mac-sami   \
-			iso8859-11 ibm866nav pt154 rk1048 mik brf
+			iso8859-11 ibm866nav pt154 rk1048 mik brf \
+			mac-centraleurope koi8-ru
 
 gen-special-modules := iso8859-7jp
 
@@ -353,6 +356,8 @@ $(objpfx)bug-iconv2.out: $(objpfx)gconv-modules \
 			 $(addprefix $(objpfx),$(modules.so))
 $(objpfx)bug-iconv3: $(libdl)
 $(objpfx)bug-iconv3.out: $(objpfx)gconv-modules \
+			 $(addprefix $(objpfx),$(modules.so))
+$(objpfx)bug-iconv5.out: $(objpfx)gconv-modules \
 			 $(addprefix $(objpfx),$(modules.so))
 $(objpfx)tst-loading.out: $(objpfx)gconv-modules \
 			  $(addprefix $(objpfx),$(modules.so))

@@ -1,4 +1,4 @@
-/* Copyright (C) 1997, 2000 Free Software Foundation, Inc.
+/* Copyright (C) 1997, 2000, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Richard Henderson (rth@tamu.edu).
 
@@ -62,40 +62,22 @@ ENTRY (__clone)
 	/* Do the system call */
 	set	__NR_clone, %g1
 	ta	0x6d
-	bcs,pn	%xcc, 99f
+	bcs,pn	%xcc, 98f
 	 nop
 	brnz,pn	%o1, __thread_start
 	 nop
 	jmpl	%i7 + 8, %g0
 	 restore %o0, %g0, %o0
-99:
-#ifndef _LIBC_REENTRANT
-#ifdef PIC
-	call	1f
-	sethi	%hi(_GLOBAL_OFFSET_TABLE_-(99b-.)), %l7
-1:	or	%l7, %lo(_GLOBAL_OFFSET_TABLE_-(99b-.)), %l7
-	add	%l7, %o7, %l7
-	set	EINVAL, %i0
-	sethi	%hi(errno), %g2
-	or	%g2, %lo(errno), %g2
-	st	%i0, [%l7+%g2]
-#else
-	sethi	%hi(errno), %g2
-	set	EINVAL, %i0
-	st	%i0, [%g2+%lo(errno)]
-#endif
-#else
-	call	__errno_location
-	 nop
+99:	mov	EINVAL, %o0
+98:	call	HIDDEN_JUMPTARGET(__errno_location)
+	 mov	%o0, %i0
 	st	%i0, [%o0]
-#endif
 	jmpl	%i7 + 8, %g0
 	 restore %g0,-1,%o0
 END(__clone)
 
 	.type __thread_start,@function
 __thread_start:
-	cfi_startproc
 #ifdef RESET_PID
 	sethi	%hi(CLONE_THREAD), %l0
 	andcc	%g4, %l0, %g0
@@ -112,9 +94,8 @@ __thread_start:
 	mov	%g0, %fp	/* terminate backtrace */
 	call	%g2
 	 mov	%g3,%o0
-	call	_exit,0
+	call	HIDDEN_JUMPTARGET(_exit),0
 	 nop
-	cfi_endproc
 
 	.size	__thread_start, .-__thread_start
 

@@ -66,7 +66,7 @@ routines :=								      \
 	spawnattr_getsigmask spawnattr_getschedpolicy spawnattr_getschedparam \
 	spawnattr_setsigmask spawnattr_setschedpolicy spawnattr_setschedparam \
 	posix_madvise							      \
-	get_child_max sched_cpucount
+	get_child_max sched_cpucount sched_cpualloc sched_cpufree
 
 include ../Makeconfig
 
@@ -90,7 +90,7 @@ tests		:= tstgetopt testfnm runtests runptests	     \
 		   tst-execv1 tst-execv2 tst-execl1 tst-execl2 \
 		   tst-execve1 tst-execve2 tst-execle1 tst-execle2 \
 		   tst-execvp3 tst-execvp4 tst-rfc3484 tst-rfc3484-2 \
-		   tst-getaddrinfo3 tst-fnmatch2 tst-cpucount
+		   tst-getaddrinfo3 tst-fnmatch2 tst-cpucount tst-cpuset
 xtests		:= bug-ga2
 ifeq (yes,$(build-shared))
 test-srcs	:= globtest
@@ -98,7 +98,7 @@ tests           += wordexp-test tst-exec tst-spawn
 endif
 others		:= getconf
 install-bin	:= getconf
-install-others	:= $(inst_libexecdir)/getconf
+install-others-programs	:= $(inst_libexecdir)/getconf
 
 before-compile	:= testcases.h ptestcases.h
 
@@ -110,7 +110,7 @@ generated := $(addprefix wordexp-test-result, 1 2 3 4 5 6 7 8 9 10) \
 	     tst-rxspencer-mem tst-rxspencer.mtrace tst-getconf.out \
 	     tst-pcre-mem tst-pcre.mtrace tst-boost-mem tst-boost.mtrace \
 	     bug-ga2.mtrace bug-ga2-mem bug-glob2.mtrace bug-glob2-mem \
-	     tst-vfork3-mem tst-vfork3.mtrace
+	     tst-vfork3-mem tst-vfork3.mtrace getconf.speclist
 
 include ../Rules
 
@@ -291,12 +291,20 @@ bug-glob2-ENV = MALLOC_TRACE=$(objpfx)bug-glob2.mtrace
 $(objpfx)bug-glob2-mem: $(objpfx)bug-glob2.out
 	$(common-objpfx)malloc/mtrace $(objpfx)bug-glob2.mtrace > $@
 
-$(inst_libexecdir)/getconf: $(objpfx)getconf FORCE
+$(inst_libexecdir)/getconf: $(inst_bindir)/getconf \
+			    $(objpfx)getconf.speclist FORCE
 	$(addprefix $(..)./scripts/mkinstalldirs ,\
 		    $(filter-out $(wildcard $@),$@))
-	for spec in `LC_ALL=C GETCONF_DIR=/dev/null \
-		     $(run-program-prefix) $< \
-		     _POSIX_V6_WIDTH_RESTRICTED_ENVS`; do \
-		$(INSTALL_PROGRAM) $< $@/$$spec.new; \
-		mv -f $@/$$spec.new $@/$$spec; \
-	done
+	while read spec; do \
+	  ln -f $< $@/$$spec.new || $(INSTALL_PROGRAM) $< $@/$$spec.new; \
+	  mv -f $@/$$spec.new $@/$$spec; \
+	done < $(objpfx)getconf.speclist
+
+$(objpfx)getconf.speclist: $(objpfx)getconf
+ifeq (no,$(cross-compiling))
+	LC_ALL=C GETCONF_DIR=/dev/null \
+	$(run-program-prefix) $< _POSIX_V6_WIDTH_RESTRICTED_ENVS > $@.new
+else
+	> $@.new
+endif
+	mv -f $@.new $@

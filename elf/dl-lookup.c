@@ -88,9 +88,7 @@ static int
 internal_function
 add_dependency (struct link_map *undef_map, struct link_map *map, int flags)
 {
-  struct link_map **list;
   struct link_map *runp;
-  unsigned int act;
   unsigned int i;
   int result = 0;
 
@@ -99,53 +97,95 @@ add_dependency (struct link_map *undef_map, struct link_map *map, int flags)
   if (undef_map == map)
     return 0;
 
-  /* Make sure nobody can unload the object while we are at it.
-     If we hold a scope lock drop it now to avoid ABBA locking problems.  */
-  if ((flags & DL_LOOKUP_SCOPE_LOCK) != 0 && !RTLD_SINGLE_THREAD_P)
-    {
-      __rtld_mrlock_unlock (undef_map->l_scope_lock);
-
-      __rtld_lock_lock_recursive (GL(dl_load_lock));
-
-      __rtld_mrlock_lock (undef_map->l_scope_lock);
-    }
-  else
-    __rtld_lock_lock_recursive (GL(dl_load_lock));
-
   /* Avoid references to objects which cannot be unloaded anyway.  */
-  if (map->l_type != lt_loaded
-      || (map->l_flags_1 & DF_1_NODELETE) != 0)
-    goto out;
+  assert (map->l_type == lt_loaded);
+  if ((map->l_flags_1 & DF_1_NODELETE) != 0)
+    return 0;
 
-  /* If the object with the undefined reference cannot be removed ever
-     just make sure the same is true for the object which contains the
-     definition.  */
-  if (undef_map->l_type != lt_loaded
-      || (undef_map->l_flags_1 & DF_1_NODELETE) != 0)
-    {
-      map->l_flags_1 |= DF_1_NODELETE;
-      goto out;
-    }
+  struct link_map_reldeps *l_reldeps
+    = atomic_forced_read (undef_map->l_reldeps);
+
+  /* Make sure l_reldeps is read before l_initfini.  */
+  atomic_read_barrier ();
 
   /* Determine whether UNDEF_MAP already has a reference to MAP.  First
      look in the normal dependencies.  */
-  if (undef_map->l_initfini != NULL)
+  struct link_map **l_initfini = atomic_forced_read (undef_map->l_initfini);
+  if (l_initfini != NULL)
     {
-      list = undef_map->l_initfini;
-
-      for (i = 0; list[i] != NULL; ++i)
-	if (list[i] == map)
-	  goto out;
+      for (i = 0; l_initfini[i] != NULL; ++i)
+	if (l_initfini[i] == map)
+	  return 0;
     }
 
   /* No normal dependency.  See whether we already had to add it
      to the special list of dynamic dependencies.  */
-  list = undef_map->l_reldeps;
-  act = undef_map->l_reldepsact;
+  unsigned int l_reldepsact = 0;
+  if (l_reldeps != NULL)
+    {
+      struct link_map **list = &l_reldeps->list[0];
+      l_reldepsact = l_reldeps->act;
+      for (i = 0; i < l_reldepsact; ++i)
+	if (list[i] == map)
+	  return 0;
+    }
 
-  for (i = 0; i < act; ++i)
-    if (list[i] == map)
-      goto out;
+  /* Save serial number of the target MAP.  */
+  unsigned long long serial = map->l_serial;
+
+  /* Make sure nobody can unload the object while we are at it.  */
+  if (__builtin_expect (flags & DL_LOOKUP_GSCOPE_LOCK, 0))
+    {
+      /* We can't just call __rtld_lock_lock_recursive (GL(dl_load_lock))
+	 here, that can result in ABBA deadlock.  */
+      THREAD_GSCOPE_RESET_FLAG ();
+      __rtld_lock_lock_recursive (GL(dl_load_lock));
+      /* While MAP value won't change, after THREAD_GSCOPE_RESET_FLAG ()
+	 it can e.g. point to unallocated memory.  So avoid the optimizer
+	 treating the above read from MAP->l_serial as ensurance it
+	 can safely dereference it.  */
+      map = atomic_forced_read (map);
+
+      /* From this point on it is unsafe to dereference MAP, until it
+	 has been found in one of the lists.  */
+
+      /* Redo the l_initfini check in case undef_map's l_initfini
+	 changed in the mean time.  */
+      if (undef_map->l_initfini != l_initfini
+	  && undef_map->l_initfini != NULL)
+	{
+	  l_initfini = undef_map->l_initfini;
+	  for (i = 0; l_initfini[i] != NULL; ++i)
+	    if (l_initfini[i] == map)
+	      goto out_check;
+	}
+
+      /* Redo the l_reldeps check if undef_map's l_reldeps changed in
+	 the mean time.  */
+      if (undef_map->l_reldeps != NULL)
+	{
+	  if (undef_map->l_reldeps != l_reldeps)
+	    {
+	      struct link_map **list = &undef_map->l_reldeps->list[0];
+	      l_reldepsact = undef_map->l_reldeps->act;
+	      for (i = 0; i < l_reldepsact; ++i)
+		if (list[i] == map)
+		  goto out_check;
+	    }
+	  else if (undef_map->l_reldeps->act > l_reldepsact)
+	    {
+	      struct link_map **list
+		= &undef_map->l_reldeps->list[0];
+	      i = l_reldepsact;
+	      l_reldepsact = undef_map->l_reldeps->act;
+	      for (; i < l_reldepsact; ++i)
+		if (list[i] == map)
+		  goto out_check;
+	    }
+	}
+    }
+  else
+    __rtld_lock_lock_recursive (GL(dl_load_lock));
 
   /* The object is not yet in the dependency list.  Before we add
      it make sure just one more time the object we are about to
@@ -158,34 +198,69 @@ add_dependency (struct link_map *undef_map, struct link_map *map, int flags)
 
   if (runp != NULL)
     {
-      /* The object is still available.  Add the reference now.  */
-      if (__builtin_expect (act >= undef_map->l_reldepsmax, 0))
+      /* The object is still available.  */
+
+      /* MAP could have been dlclosed, freed and then some other dlopened
+	 library could have the same link_map pointer.  */
+      if (map->l_serial != serial)
+	goto out_check;
+
+      /* Redo the NODELETE check, as when dl_load_lock wasn't held
+	 yet this could have changed.  */
+      if ((map->l_flags_1 & DF_1_NODELETE) != 0)
+	goto out;
+
+      /* If the object with the undefined reference cannot be removed ever
+	 just make sure the same is true for the object which contains the
+	 definition.  */
+      if (undef_map->l_type != lt_loaded
+	  || (undef_map->l_flags_1 & DF_1_NODELETE) != 0)
+	{
+	  map->l_flags_1 |= DF_1_NODELETE;
+	  goto out;
+	}
+
+      /* Add the reference now.  */
+      if (__builtin_expect (l_reldepsact >= undef_map->l_reldepsmax, 0))
 	{
 	  /* Allocate more memory for the dependency list.  Since this
 	     can never happen during the startup phase we can use
 	     `realloc'.  */
-	  void *newp;
+	  struct link_map_reldeps *newp;
+	  unsigned int max
+	    = undef_map->l_reldepsmax ? undef_map->l_reldepsmax * 2 : 10;
 
-	  undef_map->l_reldepsmax += 5;
-	  newp = realloc (undef_map->l_reldeps,
-			  undef_map->l_reldepsmax
-			  * sizeof (struct link_map *));
-
-	  if (__builtin_expect (newp != NULL, 1))
-	    undef_map->l_reldeps = (struct link_map **) newp;
+	  newp = malloc (sizeof (*newp) + max * sizeof (struct link_map *));
+	  if (newp == NULL)
+	    {
+	      /* If we didn't manage to allocate memory for the list this is
+		 no fatal problem.  We simply make sure the referenced object
+		 cannot be unloaded.  This is semantically the correct
+		 behavior.  */
+	      map->l_flags_1 |= DF_1_NODELETE;
+	      goto out;
+	    }
 	  else
-	    /* Correct the addition.  */
-	    undef_map->l_reldepsmax -= 5;
+	    {
+	      if (l_reldepsact)
+		memcpy (&newp->list[0], &undef_map->l_reldeps->list[0],
+			l_reldepsact * sizeof (struct link_map *));
+	      newp->list[l_reldepsact] = map;
+	      newp->act = l_reldepsact + 1;
+	      atomic_write_barrier ();
+	      void *old = undef_map->l_reldeps;
+	      undef_map->l_reldeps = newp;
+	      undef_map->l_reldepsmax = max;
+	      if (old)
+		_dl_scope_free (old);
+	    }
 	}
-
-      /* If we didn't manage to allocate memory for the list this is
-	 no fatal mistake.  We simply increment the use counter of the
-	 referenced object and don't record the dependencies.  This
-	 means this increment can never be reverted and the object
-	 will never be unloaded.  This is semantically the correct
-	 behavior.  */
-      if (__builtin_expect (act < undef_map->l_reldepsmax, 1))
-	undef_map->l_reldeps[undef_map->l_reldepsact++] = map;
+      else
+	{
+	  undef_map->l_reldeps->list[l_reldepsact] = map;
+	  atomic_write_barrier ();
+	  undef_map->l_reldeps->act = l_reldepsact + 1;
+	}
 
       /* Display information if we are debugging.  */
       if (__builtin_expect (GLRO(dl_debug_mask) & DL_DEBUG_FILES, 0))
@@ -205,7 +280,15 @@ add_dependency (struct link_map *undef_map, struct link_map *map, int flags)
   /* Release the lock.  */
   __rtld_lock_unlock_recursive (GL(dl_load_lock));
 
+  if (__builtin_expect (flags & DL_LOOKUP_GSCOPE_LOCK, 0))
+    THREAD_GSCOPE_SET_FLAG ();
+
   return result;
+
+ out_check:
+  if (map->l_serial != serial)
+    result = -1;
+  goto out;
 }
 
 static void
@@ -237,20 +320,17 @@ _dl_lookup_symbol_x (const char *undef_name, struct link_map *undef_map,
 
   bump_num_relocations ();
 
-  /* No other flag than DL_LOOKUP_ADD_DEPENDENCY and DL_LOOKUP_SCOPE_LOCK
+  /* No other flag than DL_LOOKUP_ADD_DEPENDENCY or DL_LOOKUP_GSCOPE_LOCK
      is allowed if we look up a versioned symbol.  */
-  assert (version == NULL || (flags & ~(DL_LOOKUP_ADD_DEPENDENCY
-					| DL_LOOKUP_SCOPE_LOCK)) == 0);
+  assert (version == NULL
+	  || (flags & ~(DL_LOOKUP_ADD_DEPENDENCY | DL_LOOKUP_GSCOPE_LOCK))
+	     == 0);
 
   size_t i = 0;
   if (__builtin_expect (skip_map != NULL, 0))
-    {
-      /* Search the relevant loaded objects for a definition.  */
-      while ((*scope)->r_list[i] != skip_map)
-	++i;
-
-      assert (i < (*scope)->r_nlist);
-    }
+    /* Search the relevant loaded objects for a definition.  */
+    while ((*scope)->r_list[i] != skip_map)
+      ++i;
 
   /* Search the relevant loaded objects for a definition.  */
   for (size_t start = i; *scope != NULL; start = 0, ++scope)
@@ -354,9 +434,9 @@ _dl_lookup_symbol_x (const char *undef_name, struct link_map *undef_map,
       /* Something went wrong.  Perhaps the object we tried to reference
 	 was just removed.  Try finding another definition.  */
       return _dl_lookup_symbol_x (undef_name, undef_map, ref,
-				  (flags & DL_LOOKUP_SCOPE_LOCK) == 0
-				  ? symbol_scope : undef_map->l_scope, version,
-				  type_class, flags, skip_map);
+				  (flags & DL_LOOKUP_GSCOPE_LOCK)
+				  ? undef_map->l_scope : symbol_scope,
+				  version, type_class, flags, skip_map);
 
   /* The object is used.  */
   current_value.m->l_used = 1;

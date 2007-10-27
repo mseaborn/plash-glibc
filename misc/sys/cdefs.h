@@ -131,8 +131,18 @@
 /* Fortify support.  */
 #define __bos(ptr) __builtin_object_size (ptr, __USE_FORTIFY_LEVEL > 1)
 #define __bos0(ptr) __builtin_object_size (ptr, 0)
-#define __warndecl(name, msg) extern void name (void)
 
+#if __GNUC_PREREQ (4,3)
+# define __warndecl(name, msg) \
+  extern void name (void) __attribute__((__warning__ (msg)))
+# define __warnattr(msg) __attribute__((__warning__ (msg)))
+# define __errordecl(name, msg) \
+  extern void name (void) __attribute__((__error__ (msg)))
+#else
+# define __warndecl(name, msg) extern void name (void)
+# define __warnattr(msg)
+# define __errordecl(name, msg) extern void name (void)
+#endif
 
 /* Support for flexible arrays.  */
 #if __GNUC_PREREQ (2,97)
@@ -281,13 +291,27 @@
 
 /* GCC 4.3 and above with -std=c99 or -std=gnu99 implements ISO C99
    inline semantics, unless -fgnu89-inline is used.  */
-#ifdef __GNUC_STDC_INLINE__
-# define __extern_inline extern __inline __attribute__ ((__gnu_inline__))
-# define __extern_always_inline \
+#if !defined __cplusplus || __GNUC_PREREQ (4,3)
+# if defined __GNUC_STDC_INLINE__ || defined __cplusplus
+#  define __extern_inline extern __inline __attribute__ ((__gnu_inline__))
+#  if __GNUC_PREREQ (4,3)
+#   define __extern_always_inline \
+  extern __always_inline __attribute__ ((__gnu_inline__, __artificial__))
+#  else
+#   define __extern_always_inline \
   extern __always_inline __attribute__ ((__gnu_inline__))
-#else
-# define __extern_inline extern __inline
-# define __extern_always_inline extern __always_inline
+#  endif
+# else
+#  define __extern_inline extern __inline
+#  define __extern_always_inline extern __always_inline
+# endif
+#endif
+
+/* GCC 4.3 and above allow passing all anonymous arguments of an
+   __extern_always_inline function to some other vararg function.  */
+#if __GNUC_PREREQ (4,3)
+# define __va_arg_pack() __builtin_va_arg_pack ()
+# define __va_arg_pack_len() __builtin_va_arg_pack_len ()
 #endif
 
 /* It is possible to compile containing GCC extensions even if GCC is
@@ -336,6 +360,10 @@
   extern __typeof (name) name __asm (__ASMNAME (#alias));
 #  define __LDBL_REDIR_DECL(name) \
   extern __typeof (name) name __asm (__ASMNAME ("__nldbl_" #name));
+#  define __REDIRECT_LDBL(name, proto, alias) \
+  __LDBL_REDIR1 (name, proto, __nldbl_##alias)
+#  define __REDIRECT_NTH_LDBL(name, proto, alias) \
+  __LDBL_REDIR1_NTH (name, proto, __nldbl_##alias)
 # endif
 #endif
 #if !defined __LDBL_COMPAT || !defined __REDIRECT
@@ -344,6 +372,11 @@
 # define __LDBL_REDIR1_NTH(name, proto, alias) name proto __THROW
 # define __LDBL_REDIR_NTH(name, proto) name proto __THROW
 # define __LDBL_REDIR_DECL(name)
+# ifdef __REDIRECT
+#  define __REDIRECT_LDBL(name, proto, alias) __REDIRECT (name, proto, alias)
+#  define __REDIRECT_NTH_LDBL(name, proto, alias) \
+  __REDIRECT_NTH (name, proto, alias)
+# endif
 #endif
 
 #endif	 /* sys/cdefs.h */

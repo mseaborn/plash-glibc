@@ -13,7 +13,8 @@ endif
 
 ifeq ($(subdir),misc)
 sysdep_routines += sysctl clone llseek umount umount2 readahead \
-		   setfsuid setfsgid makedev
+		   setfsuid setfsgid makedev epoll_pwait signalfd \
+		   eventfd eventfd_read eventfd_write
 
 CFLAGS-gethostid.c = -fexceptions
 
@@ -137,7 +138,7 @@ endif
 
 ifeq ($(subdir),io)
 sysdep_routines += xstatconv internal_statvfs internal_statvfs64 \
-		   sync_file_range
+		   sync_file_range open_2
 endif
 
 ifeq ($(subdir),elf)

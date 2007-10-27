@@ -56,6 +56,7 @@
    header files to decide what to declare or define:
 
    __USE_ISOC99		Define ISO C99 things.
+   __USE_ISOC95		Define ISO C90 AMD1 (C95) things.
    __USE_POSIX		Define IEEE Std 1003.1 things.
    __USE_POSIX2		Define IEEE Std 1003.2 things.
    __USE_POSIX199309	Define IEEE Std 1003.1, and .1b things.
@@ -90,6 +91,7 @@
 
 /* Undefine everything, so we get a clean slate.  */
 #undef	__USE_ISOC99
+#undef	__USE_ISOC95
 #undef	__USE_POSIX
 #undef	__USE_POSIX2
 #undef	__USE_POSIX199309
@@ -182,6 +184,12 @@
 #if (defined _ISOC99_SOURCE || defined _ISOC9X_SOURCE \
      || (defined __STDC_VERSION__ && __STDC_VERSION__ >= 199901L))
 # define __USE_ISOC99	1
+#endif
+
+/* This is to enable the ISO C90 Amendment 1:1995 extension.  */
+#if (defined _ISOC99_SOURCE || defined _ISOC9X_SOURCE \
+     || (defined __STDC_VERSION__ && __STDC_VERSION__ >= 199409L))
+# define __USE_ISOC95	1
 #endif
 
 /* If none of the ANSI/POSIX macros are defined, use POSIX.1 and POSIX.2
@@ -303,7 +311,7 @@
 /* Major and minor version number of the GNU C library package.  Use
    these macros to test for features in specific releases.  */
 #define	__GLIBC__	2
-#define	__GLIBC_MINOR__	6
+#define	__GLIBC_MINOR__	7
 
 #define __GLIBC_PREREQ(maj, min) \
 	((__GLIBC__ << 16) + __GLIBC_MINOR__ >= ((maj) << 16) + (min))
@@ -333,7 +341,8 @@
 
 /* Decide whether we can define 'extern inline' functions in headers.  */
 #if __GNUC_PREREQ (2, 7) && defined __OPTIMIZE__ \
-    && !defined __OPTIMIZE_SIZE__ && !defined __NO_INLINE__
+    && !defined __OPTIMIZE_SIZE__ && !defined __NO_INLINE__ \
+    && defined __extern_inline
 # define __USE_EXTERN_INLINES	1
 #endif
 

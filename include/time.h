@@ -46,6 +46,9 @@ extern void __tzfile_compute (time_t timer, int use_localtime,
 			      struct tm *tp);
 extern void __tzfile_default (const char *std, const char *dst,
 			      long int stdoff, long int dstoff);
+extern void __tzset_parse_tz (const char *tz);
+extern void __tz_compute (time_t timer, struct tm *tm, int use_localtime)
+     __THROW internal_function;
 
 /* Subroutine of `mktime'.  Return the `time_t' representation of TP and
    normalize TP, given that a `struct tm *' maps to a `time_t' as performed
@@ -93,17 +96,10 @@ extern int __getclktck (void);
 
 
 /* strptime support.  */
-/* Status of lookup: do we use the locale data or the raw data?  */
-#ifndef __cplusplus
-/* C++ cannot deal with using 'not'.  */
-enum ptime_locale_status { not, loc, raw };
-
 extern char * __strptime_internal (const char *rp, const char *fmt,
-				   struct tm *tm,
-				   enum ptime_locale_status *decided,
-				   int era_cnt, __locale_t locparam)
+				   struct tm *tm, void *statep,
+				   __locale_t locparam)
      internal_function;
-#endif
 
 extern double __difftime (time_t time1, time_t time0);
 

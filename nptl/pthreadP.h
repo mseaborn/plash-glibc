@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2005, 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2002,2003,2004,2005,2006,2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -96,6 +96,22 @@ enum
   PTHREAD_MUTEX_PP_ADAPTIVE_NP
   = PTHREAD_MUTEX_PRIO_PROTECT_NP | PTHREAD_MUTEX_ADAPTIVE_NP
 };
+#define PTHREAD_MUTEX_PSHARED_BIT 128
+
+#define PTHREAD_MUTEX_TYPE(m) \
+  ((m)->__data.__kind & 127)
+
+#if LLL_PRIVATE == 0 && LLL_SHARED == 128
+# define PTHREAD_MUTEX_PSHARED(m) \
+  ((m)->__data.__kind & 128)
+#else
+# define PTHREAD_MUTEX_PSHARED(m) \
+  (((m)->__data.__kind & 128) ? LLL_SHARED : LLL_PRIVATE)
+#endif
+
+/* The kernel when waking robust mutexes on exit never uses
+   FUTEX_PRIVATE_FLAG FUTEX_WAKE.  */
+#define PTHREAD_ROBUST_MUTEX_PSHARED(m) LLL_SHARED
 
 /* Ceiling in __data.__lock.  __data.__lock is signed, so don't
    use the MSB bit in there, but in the mask also include that bit,
@@ -116,6 +132,11 @@ enum
 #define PTHREAD_MUTEXATTR_FLAG_BITS \
   (PTHREAD_MUTEXATTR_FLAG_ROBUST | PTHREAD_MUTEXATTR_FLAG_PSHARED \
    | PTHREAD_MUTEXATTR_PROTOCOL_MASK | PTHREAD_MUTEXATTR_PRIO_CEILING_MASK)
+
+
+/* Check whether rwlock prefers readers.   */
+#define PTHREAD_RWLOCK_PREFER_READER_P(rwlock) \
+  ((rwlock)->__data.__flags == 0)
 
 
 /* Bits used in robust mutex implementation.  */
@@ -143,7 +164,7 @@ hidden_proto (__stack_user)
 
 /* Attribute handling.  */
 extern struct pthread_attr *__attr_list attribute_hidden;
-extern lll_lock_t __attr_list_lock attribute_hidden;
+extern int __attr_list_lock attribute_hidden;
 
 /* First available RT signal.  */
 extern int __current_sigrtmin attribute_hidden;
@@ -544,6 +565,8 @@ extern void __nptl_deallocate_tsd (void) attribute_hidden;
 extern int __nptl_setxid (struct xid_command *cmdp) attribute_hidden;
 
 extern void __free_stack_cache (void) attribute_hidden;
+
+extern void __wait_lookup_done (void) attribute_hidden;
 
 #ifdef SHARED
 # define PTHREAD_STATIC_FN_REQUIRE(name)

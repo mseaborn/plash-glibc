@@ -1002,6 +1002,7 @@ struct sort_result
 {
   struct addrinfo *dest_addr;
   struct sockaddr_storage source_addr;
+  size_t service_order;
   uint8_t source_addr_len;
   bool got_source_addr;
   uint8_t source_addr_flags;
@@ -1403,8 +1404,11 @@ rfc3484_sort (const void *p1, const void *p2)
     }
 
 
-  /* Rule 10: Otherwise, leave the order unchanged.  */
-  return 0;
+  /* Rule 10: Otherwise, leave the order unchanged.  To ensure this
+     compare with the value indicating the order in which the entries
+     have been received from the services.  NB: no two entries can have
+     the same order so the test will never return zero.  */
+  return a1->service_order < a2->service_order ? -1 : 1;
 }
 
 
@@ -1422,9 +1426,12 @@ in6aicmp (const void *p1, const void *p2)
 #define GAICONF_FNAME "/etc/gai.conf"
 
 
-/* Nozero if we are supposed to reload the config file automatically
+/* Non-zero if we are supposed to reload the config file automatically
    whenever it changed.  */
 static int gaiconf_reload_flag;
+
+/* Non-zero if gaiconf_reload_flag was ever set to true.  */
+static int gaiconf_reload_flag_ever_set;
 
 /* Last modification time.  */
 static struct timespec gaiconf_mtime;
@@ -1607,7 +1614,11 @@ gaiconf_init (void)
 
 	    case 6:
 	      if (strcmp (cmd, "reload") == 0)
-		gaiconf_reload_flag = strcmp (val1, "yes") == 0;
+		{
+		  gaiconf_reload_flag = strcmp (val1, "yes") == 0;
+		  if (gaiconf_reload_flag)
+		    gaiconf_reload_flag_ever_set = 1;
+		}
 	      break;
 
 	    case 10:
@@ -1930,9 +1941,6 @@ getaddrinfo (const char *name, const char *service,
       __libc_once_define (static, once);
       __typeof (once) old_once = once;
       __libc_once (once, gaiconf_init);
-      if (old_once && gaiconf_reload_flag)
-	gaiconf_reload ();
-
       /* Sort results according to RFC 3484.  */
       struct sort_result results[nresults];
       struct addrinfo *q;
@@ -1944,10 +1952,14 @@ getaddrinfo (const char *name, const char *service,
       if (in6ai != NULL)
 	qsort (in6ai, in6ailen, sizeof (*in6ai), in6aicmp);
 
+      int fd = -1;
+      int af = AF_UNSPEC;
+
       for (i = 0, q = p; q != NULL; ++i, last = q, q = q->ai_next)
 	{
 	  results[i].dest_addr = q;
 	  results[i].got_source_addr = false;
+	  results[i].service_order = i;
 
 	  /* If we just looked up the address for a different
 	     protocol, reuse the result.  */
@@ -1968,7 +1980,21 @@ getaddrinfo (const char *name, const char *service,
 		 want connect() to connect to the other side.  If we
 		 cannot determine the source address remember this
 		 fact.  */
-	      int fd = __socket (q->ai_family, SOCK_DGRAM, IPPROTO_IP);
+	      if (fd == -1 || (af == AF_INET && q->ai_family == AF_INET6))
+		{
+		  if (fd != -1)
+		  close_retry:
+		    close_not_cancel_no_status (fd);
+		  af = q->ai_family;
+		  fd = __socket (af, SOCK_DGRAM, IPPROTO_IP);
+		}
+	      else
+		{
+		  /* Reset the connection.  */
+		  struct sockaddr sa = { .sa_family = AF_UNSPEC };
+		  __connect (fd, &sa, sizeof (sa));
+		}
+
 	      socklen_t sl = sizeof (results[i].source_addr);
 	      if (fd != -1
 		  && __connect (fd, q->ai_addr, q->ai_addrlen) == 0
@@ -1979,9 +2005,9 @@ getaddrinfo (const char *name, const char *service,
 		  results[i].source_addr_len = sl;
 		  results[i].got_source_addr = true;
 
-		  if (q->ai_family == PF_INET6 && in6ai != NULL)
+		  if (q->ai_family == AF_INET6 && in6ai != NULL)
 		    {
-		      /* See whether the source address is the list of
+		      /* See whether the source address is on the list of
 			 deprecated or temporary addresses.  */
 		      struct in6addrinfo tmp;
 		      struct sockaddr_in6 *sin6p
@@ -1994,14 +2020,29 @@ getaddrinfo (const char *name, const char *service,
 		      if (found != NULL)
 			results[i].source_addr_flags = found->flags;
 		    }
+		  else if (q->ai_family == AF_INET && af == AF_INET6)
+		    {
+		      /* We have to convert the address.  The socket is
+			 IPv6 and the request is for IPv4.  */
+		      struct sockaddr_in6 *sin6
+			= (struct sockaddr_in6 *) &results[i].source_addr;
+		      struct sockaddr_in *sin
+			= (struct sockaddr_in *) &results[i].source_addr;
+		      assert (IN6_IS_ADDR_V4MAPPED (sin6->sin6_addr.s6_addr32));
+		      memcpy (&sin->sin_addr,
+			      &sin6->sin6_addr.s6_addr32[3], INADDRSZ);
+		      results[i].source_addr_len = INADDRSZ;
+		      sin->sin_family = AF_INET;
+		    }
 		}
+	      else if (errno == EAFNOSUPPORT && af == AF_INET6
+		       && q->ai_family == AF_INET)
+		/* This could mean IPv6 sockets are IPv6-only.  */
+		goto close_retry;
 	      else
 		/* Just make sure that if we have to process the same
 		   address again we do not copy any memory.  */
 		results[i].source_addr_len = 0;
-
-	      if (fd != -1)
-		close_not_cancel_no_status (fd);
 	    }
 
 	  /* Remember the canonical name.  */
@@ -2013,9 +2054,23 @@ getaddrinfo (const char *name, const char *service,
 	    }
 	}
 
+      if (fd != -1)
+	close_not_cancel_no_status (fd);
+
       /* We got all the source addresses we can get, now sort using
 	 the information.  */
-      qsort (results, nresults, sizeof (results[0]), rfc3484_sort);
+      if (__builtin_expect (gaiconf_reload_flag_ever_set, 0))
+	{
+	  __libc_lock_define_initialized (static, lock);
+
+	  __libc_lock_lock (lock);
+	  if (old_once && gaiconf_reload_flag)
+	    gaiconf_reload ();
+	  qsort (results, nresults, sizeof (results[0]), rfc3484_sort);
+	  __libc_lock_unlock (lock);
+	}
+      else
+	qsort (results, nresults, sizeof (results[0]), rfc3484_sort);
 
       /* Queue the results up as they come out of sorting.  */
       q = p = results[0].dest_addr;

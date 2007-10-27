@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2005 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2004, 2005, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -28,11 +28,11 @@ __pthread_cond_init (cond, cond_attr)
 {
   struct pthread_condattr *icond_attr = (struct pthread_condattr *) cond_attr;
 
-  cond->__data.__lock = LLL_MUTEX_LOCK_INITIALIZER;
+  cond->__data.__lock = LLL_LOCK_INITIALIZER;
   cond->__data.__futex = 0;
   cond->__data.__nwaiters = (icond_attr != NULL
-			     && ((icond_attr->value & (COND_CLOCK_BITS << 1))
-				 >> 1));
+			     && ((icond_attr->value
+				  & (COND_NWAITERS_SHIFT << 1)) >> 1));
   cond->__data.__total_seq = 0;
   cond->__data.__wakeup_seq = 0;
   cond->__data.__woken_seq = 0;

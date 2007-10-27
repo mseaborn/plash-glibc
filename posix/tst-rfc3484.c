@@ -26,6 +26,7 @@ __idna_to_ascii_lz (const char *input, char **output, int flags)
 int
 __idna_to_unicode_lzlz (const char *input, char **output, int flags)
 {
+  *output = NULL;
   return 0;
 }
 
@@ -92,6 +93,7 @@ do_test (void)
       memcpy(&results[i].source_addr, &so, sizeof (so));
       results[i].source_addr_len = sizeof (so);
       results[i].source_addr_flags = 0;
+      results[i].service_order = i;
     }
 
   qsort (results, naddrs, sizeof (results[0]), rfc3484_sort);

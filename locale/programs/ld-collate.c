@@ -3,8 +3,9 @@
    Contributed by Ulrich Drepper <drepper@gnu.org>, 1995.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License version 2 as
-   published by the Free Software Foundation.
+   it under the terms of the GNU General Public License as published
+   by the Free Software Foundation; version 2 of the License, or
+   (at your option) any later version.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -180,6 +181,14 @@ struct symbol_t
 #include "3level.h"
 
 
+/* Simple name list for the preprocessor.  */
+struct name_list
+{
+  struct name_list *next;
+  char str[0];
+};
+
+
 /* The real definition of the struct for the LC_COLLATE locale.  */
 struct locale_collate_t
 {
@@ -239,12 +248,24 @@ struct locale_collate_t
   /* The arrays with the collation sequence order.  */
   unsigned char mbseqorder[256];
   struct collseq_table wcseqorder;
+
+  /* State of the preprocessor.  */
+  enum
+    {
+      else_none = 0,
+      else_ignore,
+      else_seen
+    }
+    else_action;
 };
 
 
 /* We have a few global variables which are used for reading all
    LC_COLLATE category descriptions in all files.  */
 static uint32_t nrules;
+
+/* List of defined preprocessor symbols.  */
+static struct name_list *defined;
 
 
 /* We need UTF-8 encoding of numbers.  */
@@ -989,7 +1010,8 @@ insert_value (struct linereader *ldfile, const char *symstr, size_t symlen,
 	  uint32_t wcs[2] = { wc, 0 };
 
 	  /* We have to allocate an entry.  */
-	  elem = new_element (collate, seq != NULL ? seq->bytes : NULL,
+	  elem = new_element (collate,
+			      seq != NULL ? (char *) seq->bytes : NULL,
 			      seq != NULL ? seq->nbytes : 0,
 			      wc == ILLEGAL_CHAR_VALUE ? NULL : wcs,
 			      symstr, symlen, 1);
@@ -1384,7 +1406,8 @@ order for `%.*s' already defined at %s:%Zu"),
 
 		      /* We have to allocate an entry.  */
 		      elem = new_element (collate,
-					  seq != NULL ? seq->bytes : NULL,
+					  seq != NULL
+					  ? (char *) seq->bytes : NULL,
 					  seq != NULL ? seq->nbytes : 0,
 					  wc == ILLEGAL_CHAR_VALUE
 					  ? NULL : wcs, buf, lenfrom, 1);
@@ -1542,9 +1565,10 @@ collate_finish (struct localedef_t *locale, const struct charmap_t *charmap)
      or in none.  */
   for (i = 0; i < nrules; ++i)
     for (sect = collate->sections; sect != NULL; sect = sect->next)
-      if (sect->rules != NULL
+      if (sect != collate->current_section
+	  && sect->rules != NULL
 	  && ((sect->rules[i] & sort_position)
-	      != (collate->sections->rules[i] & sort_position)))
+	      != (collate->current_section->rules[i] & sort_position)))
 	{
 	  WITH_CUR_LOCALE (error (0, 0, _("\
 %s: `position' must be used for a specific level in all sections or none"),
@@ -1839,7 +1863,8 @@ symbol `%s' has the same encoding as"), (*eptr)->name);
 
       while (osect != sect)
 	if (osect->rules != NULL
-	    && memcmp (osect->rules, sect->rules, nrules) == 0)
+	    && memcmp (osect->rules, sect->rules,
+		       nrules * sizeof (osect->rules[0])) == 0)
 	  break;
 	else
 	  osect = osect->next;
@@ -1935,6 +1960,137 @@ output_weightwc (struct obstack *pool, struct locale_collate_t *collate,
   return retval | ((elem->section->ruleidx & 0x7f) << 24);
 }
 
+/* If localedef is every threaded, this would need to be __thread var.  */
+static struct
+{
+  struct obstack *weightpool;
+  struct obstack *extrapool;
+  struct obstack *indpool;
+  struct locale_collate_t *collate;
+  struct collidx_table *tablewc;
+} atwc;
+
+static void add_to_tablewc (uint32_t ch, struct element_t *runp);
+
+static void
+add_to_tablewc (uint32_t ch, struct element_t *runp)
+{
+  if (runp->wcnext == NULL && runp->nwcs == 1)
+    {
+      int32_t weigthidx = output_weightwc (atwc.weightpool, atwc.collate,
+					   runp);
+      collidx_table_add (atwc.tablewc, ch, weigthidx);
+    }
+  else
+    {
+      /* As for the singlebyte table, we recognize sequences and
+	 compress them.  */
+      struct element_t *lastp;
+
+      collidx_table_add (atwc.tablewc, ch,
+			 -(obstack_object_size (atwc.extrapool)
+			 / sizeof (uint32_t)));
+
+      do
+	{
+	  /* Store the current index in the weight table.  We know that
+	     the current position in the `extrapool' is aligned on a
+	     32-bit address.  */
+	  int32_t weightidx;
+	  int added;
+
+	  /* Find out wether this is a single entry or we have more than
+	     one consecutive entry.  */
+	  if (runp->wcnext != NULL
+	      && runp->nwcs == runp->wcnext->nwcs
+	      && wmemcmp ((wchar_t *) runp->wcs,
+			  (wchar_t *)runp->wcnext->wcs,
+			  runp->nwcs - 1) == 0
+	      && (runp->wcs[runp->nwcs - 1]
+		  == runp->wcnext->wcs[runp->nwcs - 1] + 1))
+	    {
+	      int i;
+	      struct element_t *series_startp = runp;
+	      struct element_t *curp;
+
+	      /* Now add first the initial byte sequence.  */
+	      added = (1 + 1 + 2 * (runp->nwcs - 1)) * sizeof (int32_t);
+	      if (sizeof (int32_t) == sizeof (int))
+		obstack_make_room (atwc.extrapool, added);
+
+	      /* More than one consecutive entry.  We mark this by having
+		 a negative index into the indirect table.  */
+	      obstack_int32_grow_fast (atwc.extrapool,
+				       -(obstack_object_size (atwc.indpool)
+					 / sizeof (int32_t)));
+	      obstack_int32_grow_fast (atwc.extrapool, runp->nwcs - 1);
+
+	      do
+		runp = runp->wcnext;
+	      while (runp->wcnext != NULL
+		     && runp->nwcs == runp->wcnext->nwcs
+		     && wmemcmp ((wchar_t *) runp->wcs,
+				 (wchar_t *)runp->wcnext->wcs,
+				 runp->nwcs - 1) == 0
+		     && (runp->wcs[runp->nwcs - 1]
+			 == runp->wcnext->wcs[runp->nwcs - 1] + 1));
+
+	      /* Now walk backward from here to the beginning.  */
+	      curp = runp;
+
+	      for (i = 1; i < runp->nwcs; ++i)
+		obstack_int32_grow_fast (atwc.extrapool, curp->wcs[i]);
+
+	      /* Now find the end of the consecutive sequence and
+		 add all the indeces in the indirect pool.  */
+	      do
+		{
+		  weightidx = output_weightwc (atwc.weightpool, atwc.collate,
+					       curp);
+		  obstack_int32_grow (atwc.indpool, weightidx);
+
+		  curp = curp->wclast;
+		}
+	      while (curp != series_startp);
+
+	      /* Add the final weight.  */
+	      weightidx = output_weightwc (atwc.weightpool, atwc.collate,
+					   curp);
+	      obstack_int32_grow (atwc.indpool, weightidx);
+
+	      /* And add the end byte sequence.  Without length this
+		 time.  */
+	      for (i = 1; i < curp->nwcs; ++i)
+		obstack_int32_grow (atwc.extrapool, curp->wcs[i]);
+	    }
+	  else
+	    {
+	      /* A single entry.  Simply add the index and the length and
+		 string (except for the first character which is already
+		 tested for).  */
+	      int i;
+
+	      /* Output the weight info.  */
+	      weightidx = output_weightwc (atwc.weightpool, atwc.collate,
+					   runp);
+
+	      added = (1 + 1 + runp->nwcs - 1) * sizeof (int32_t);
+	      if (sizeof (int) == sizeof (int32_t))
+		obstack_make_room (atwc.extrapool, added);
+
+	      obstack_int32_grow_fast (atwc.extrapool, weightidx);
+	      obstack_int32_grow_fast (atwc.extrapool, runp->nwcs - 1);
+	      for (i = 1; i < runp->nwcs; ++i)
+		obstack_int32_grow_fast (atwc.extrapool, runp->wcs[i]);
+	    }
+
+	  /* Next entry.  */
+	  lastp = runp;
+	  runp = runp->wcnext;
+	}
+      while (runp != NULL);
+    }
+}
 
 void
 collate_output (struct localedef_t *locale, const struct charmap_t *charmap,
@@ -2292,132 +2448,21 @@ collate_output (struct localedef_t *locale, const struct charmap_t *charmap,
      with the same wide character and add them one after the other to
      the table.  In case we have more than one sequence starting with
      the same byte we have to use extra indirection.  */
-  {
-    auto void add_to_tablewc (uint32_t ch, struct element_t *runp);
+  tablewc.p = 6;
+  tablewc.q = 10;
+  collidx_table_init (&tablewc);
 
-    void add_to_tablewc (uint32_t ch, struct element_t *runp)
-      {
-	if (runp->wcnext == NULL && runp->nwcs == 1)
-	  {
-	    int32_t weigthidx = output_weightwc (&weightpool, collate, runp);
-	    collidx_table_add (&tablewc, ch, weigthidx);
-	  }
-	else
-	  {
-	    /* As for the singlebyte table, we recognize sequences and
-	       compress them.  */
-	    struct element_t *lastp;
+  atwc.weightpool = &weightpool;
+  atwc.extrapool = &extrapool;
+  atwc.indpool = &indirectpool;
+  atwc.collate = collate;
+  atwc.tablewc = &tablewc;
 
-	    collidx_table_add (&tablewc, ch,
-			       -(obstack_object_size (&extrapool) / sizeof (uint32_t)));
+  wchead_table_iterate (&collate->wcheads, add_to_tablewc);
 
-	    do
-	      {
-		/* Store the current index in the weight table.  We know that
-		   the current position in the `extrapool' is aligned on a
-		   32-bit address.  */
-		int32_t weightidx;
-		int added;
+  memset (&atwc, 0, sizeof (atwc));
 
-		/* Find out wether this is a single entry or we have more than
-		   one consecutive entry.  */
-		if (runp->wcnext != NULL
-		    && runp->nwcs == runp->wcnext->nwcs
-		    && wmemcmp ((wchar_t *) runp->wcs,
-				(wchar_t *)runp->wcnext->wcs,
-				runp->nwcs - 1) == 0
-		    && (runp->wcs[runp->nwcs - 1]
-			== runp->wcnext->wcs[runp->nwcs - 1] + 1))
-		  {
-		    int i;
-		    struct element_t *series_startp = runp;
-		    struct element_t *curp;
-
-		    /* Now add first the initial byte sequence.  */
-		    added = (1 + 1 + 2 * (runp->nwcs - 1)) * sizeof (int32_t);
-		    if (sizeof (int32_t) == sizeof (int))
-		      obstack_make_room (&extrapool, added);
-
-		    /* More than one consecutive entry.  We mark this by having
-		       a negative index into the indirect table.  */
-		    obstack_int32_grow_fast (&extrapool,
-					     -(obstack_object_size (&indirectpool)
-					       / sizeof (int32_t)));
-		    obstack_int32_grow_fast (&extrapool, runp->nwcs - 1);
-
-		    do
-		      runp = runp->wcnext;
-		    while (runp->wcnext != NULL
-			   && runp->nwcs == runp->wcnext->nwcs
-			   && wmemcmp ((wchar_t *) runp->wcs,
-				       (wchar_t *)runp->wcnext->wcs,
-				       runp->nwcs - 1) == 0
-			   && (runp->wcs[runp->nwcs - 1]
-			       == runp->wcnext->wcs[runp->nwcs - 1] + 1));
-
-		    /* Now walk backward from here to the beginning.  */
-		    curp = runp;
-
-		    for (i = 1; i < runp->nwcs; ++i)
-		      obstack_int32_grow_fast (&extrapool, curp->wcs[i]);
-
-		    /* Now find the end of the consecutive sequence and
-		       add all the indeces in the indirect pool.  */
-		    do
-		      {
-			weightidx = output_weightwc (&weightpool, collate,
-						     curp);
-			obstack_int32_grow (&indirectpool, weightidx);
-
-			curp = curp->wclast;
-		      }
-		    while (curp != series_startp);
-
-		    /* Add the final weight.  */
-		    weightidx = output_weightwc (&weightpool, collate, curp);
-		    obstack_int32_grow (&indirectpool, weightidx);
-
-		    /* And add the end byte sequence.  Without length this
-		       time.  */
-		    for (i = 1; i < curp->nwcs; ++i)
-		      obstack_int32_grow (&extrapool, curp->wcs[i]);
-		  }
-		else
-		  {
-		    /* A single entry.  Simply add the index and the length and
-		       string (except for the first character which is already
-		       tested for).  */
-		    int i;
-
-		    /* Output the weight info.  */
-		    weightidx = output_weightwc (&weightpool, collate, runp);
-
-		    added = (1 + 1 + runp->nwcs - 1) * sizeof (int32_t);
-		    if (sizeof (int) == sizeof (int32_t))
-		      obstack_make_room (&extrapool, added);
-
-		    obstack_int32_grow_fast (&extrapool, weightidx);
-		    obstack_int32_grow_fast (&extrapool, runp->nwcs - 1);
-		    for (i = 1; i < runp->nwcs; ++i)
-		      obstack_int32_grow_fast (&extrapool, runp->wcs[i]);
-		  }
-
-		/* Next entry.  */
-		lastp = runp;
-		runp = runp->wcnext;
-	      }
-	    while (runp != NULL);
-	  }
-      }
-
-    tablewc.p = 6;
-    tablewc.q = 10;
-    collidx_table_init (&tablewc);
-
-    wchead_table_iterate (&collate->wcheads, add_to_tablewc);
-
-    collidx_table_finalize (&tablewc);
-  }
+  collidx_table_finalize (&tablewc);
 
   /* Now add the four tables.  */
   assert (cnt == _NL_ITEM_INDEX (_NL_COLLATE_TABLEWC));
@@ -2495,7 +2540,9 @@ collate_output (struct localedef_t *locale, const struct charmap_t *charmap,
 	  uint32_t namelen = strlen (runp->name);
 	  uint32_t hash = elem_hash (runp->name, namelen);
 	  size_t idx = hash % elem_size;
+#ifndef NDEBUG
 	  size_t start_idx = idx;
+#endif
 
 	  if (elem_table[idx * 2] != 0)
 	    {
@@ -2595,6 +2642,46 @@ collate_output (struct localedef_t *locale, const struct charmap_t *charmap,
 }
 
 
+static enum token_t
+skip_to (struct linereader *ldfile, struct locale_collate_t *collate,
+	 const struct charmap_t *charmap, int to_endif)
+{
+  while (1)
+    {
+      struct token *now = lr_token (ldfile, charmap, NULL, NULL, 0);
+      enum token_t nowtok = now->tok;
+
+      if (nowtok == tok_eof || nowtok == tok_end)
+	return nowtok;
+
+      if (nowtok == tok_ifdef || nowtok == tok_ifndef)
+	{
+	  lr_error (ldfile, _("%s: nested conditionals not supported"),
+		    "LC_COLLATE");
+	  nowtok = skip_to (ldfile, collate, charmap, tok_endif);
+	  if (nowtok == tok_eof || nowtok == tok_end)
+	    return nowtok;
+	}
+      else if (nowtok == tok_endif || (!to_endif && nowtok == tok_else))
+	{
+	  lr_ignore_rest (ldfile, 1);
+	  return nowtok;
+	}
+      else if (!to_endif && (nowtok == tok_elifdef || nowtok == tok_elifndef))
+	{
+	  /* Do not read the rest of the line.  */
+	  return nowtok;
+	}
+      else if (nowtok == tok_else)
+	{
+	  lr_error (ldfile, _("%s: more then one 'else'"), "LC_COLLATE");
+	}
+
+      lr_ignore_rest (ldfile, 0);
+    }
+}
+
+
 void
 collate_read (struct linereader *ldfile, struct localedef_t *result,
 	      const struct charmap_t *charmap, const char *repertoire_name,
@@ -2625,16 +2712,42 @@ collate_read (struct linereader *ldfile, struct localedef_t *result,
   /* The rest of the line containing `LC_COLLATE' must be free.  */
   lr_ignore_rest (ldfile, 1);
 
-  do
+  while (1)
     {
-      now = lr_token (ldfile, charmap, result, NULL, verbose);
-      nowtok = now->tok;
+      do
+	{
+	  now = lr_token (ldfile, charmap, result, NULL, verbose);
+	  nowtok = now->tok;
+	}
+      while (nowtok == tok_eol);
+
+      if (nowtok != tok_define)
+	break;
+
+      if (ignore_content)
+	lr_ignore_rest (ldfile, 0);
+      else
+	{
+	  arg = lr_token (ldfile, charmap, result, NULL, verbose);
+	  if (arg->tok != tok_ident)
+	    SYNTAX_ERROR (_("%s: syntax error"), "LC_COLLATE");
+	  else
+	    {
+	      /* Simply add the new symbol.  */
+	      struct name_list *newsym = xmalloc (sizeof (*newsym)
+						  + arg->val.str.lenmb + 1);
+	      memcpy (newsym->str, arg->val.str.startmb, arg->val.str.lenmb);
+	      newsym->str[arg->val.str.lenmb] = '\0';
+	      newsym->next = defined;
+	      defined = newsym;
+
+	      lr_ignore_rest (ldfile, 1);
+	    }
+	}
     }
-  while (nowtok == tok_eol);
 
   if (nowtok == tok_copy)
     {
-      state = 2;
       now = lr_token (ldfile, charmap, result, NULL, verbose);
       if (now->tok != tok_string)
 	{
@@ -3189,13 +3302,16 @@ error while adding equivalent collating symbol"));
 		    {
 		      /* Insert sp in the collate->sections list,
 			 right after collate->current_section.  */
-		      if (collate->current_section == NULL)
-			collate->current_section = sp;
-		      else
+		      if (collate->current_section != NULL)
 			{
 			  sp->next = collate->current_section->next;
 			  collate->current_section->next = sp;
 			}
+		      else if (collate->sections == NULL)
+			/* This is the first section to be defined.  */
+			collate->sections = sp;
+
+		      collate->current_section = sp;
 		    }
 
 		  /* Next should come the end of the line or a semicolon.  */
@@ -3301,7 +3417,9 @@ error while adding equivalent collating symbol"));
 		  was_ellipsis = tok_none;
 		}
 	    }
-	  else if (state != 2 && state != 3)
+	  else if (state == 0 && copy_locale == NULL)
+	    goto err_label;
+	  else if (state != 0 && state != 2 && state != 3)
 	    goto err_label;
 	  state = 3;
 
@@ -3767,10 +3885,11 @@ error while adding equivalent collating symbol"));
 	  break;
 
 	case tok_end:
+	seen_end:
 	  /* Next we assume `LC_COLLATE'.  */
 	  if (!ignore_content)
 	    {
-	      if (state == 0)
+	      if (state == 0 && copy_locale == NULL)
 		/* We must either see a copy statement or have
 		   ordering values.  */
 		lr_error (ldfile,
@@ -3807,6 +3926,180 @@ error while adding equivalent collating symbol"));
 	  lr_ignore_rest (ldfile, arg->tok == tok_lc_collate);
 	  return;
 
+	case tok_define:
+	  if (ignore_content)
+	    {
+	      lr_ignore_rest (ldfile, 0);
+	      break;
+	    }
+
+	  arg = lr_token (ldfile, charmap, result, NULL, verbose);
+	  if (arg->tok != tok_ident)
+	    goto err_label;
+
+	  /* Simply add the new symbol.  */
+	  struct name_list *newsym = xmalloc (sizeof (*newsym)
+					      + arg->val.str.lenmb + 1);
+	  memcpy (newsym->str, arg->val.str.startmb, arg->val.str.lenmb);
+	  newsym->str[arg->val.str.lenmb] = '\0';
+	  newsym->next = defined;
+	  defined = newsym;
+
+	  lr_ignore_rest (ldfile, 1);
+	  break;
+
+	case tok_undef:
+	  if (ignore_content)
+	    {
+	      lr_ignore_rest (ldfile, 0);
+	      break;
+	    }
+
+	  arg = lr_token (ldfile, charmap, result, NULL, verbose);
+	  if (arg->tok != tok_ident)
+	    goto err_label;
+
+	  /* Remove _all_ occurrences of the symbol from the list.  */
+	  struct name_list *prevdef = NULL;
+	  struct name_list *curdef = defined;
+	  while (curdef != NULL)
+	    if (strncmp (arg->val.str.startmb, curdef->str,
+			 arg->val.str.lenmb) == 0
+		&& curdef->str[arg->val.str.lenmb] == '\0')
+	      {
+		if (prevdef == NULL)
+		  defined = curdef->next;
+		else
+		  prevdef->next = curdef->next;
+
+		struct name_list *olddef = curdef;
+		curdef = curdef->next;
+
+		free (olddef);
+	      }
+	    else
+	      {
+		prevdef = curdef;
+		curdef = curdef->next;
+	      }
+
+	  lr_ignore_rest (ldfile, 1);
+	  break;
+
+	case tok_ifdef:
+	case tok_ifndef:
+	  if (ignore_content)
+	    {
+	      lr_ignore_rest (ldfile, 0);
+	      break;
+	    }
+
+	found_ifdef:
+	  arg = lr_token (ldfile, charmap, result, NULL, verbose);
+	  if (arg->tok != tok_ident)
+	    goto err_label;
+	  lr_ignore_rest (ldfile, 1);
+
+	  if (collate->else_action == else_none)
+	    {
+	      curdef = defined;
+	      while (curdef != NULL)
+		if (strncmp (arg->val.str.startmb, curdef->str,
+			     arg->val.str.lenmb) == 0
+		    && curdef->str[arg->val.str.lenmb] == '\0')
+		  break;
+
+	      if ((nowtok == tok_ifdef && curdef != NULL)
+		  || (nowtok == tok_ifndef && curdef == NULL))
+		{
+		  /* We have to use the if-branch.  */
+		  collate->else_action = else_ignore;
+		}
+	      else
+		{
+		  /* We have to use the else-branch, if there is one.  */
+		  nowtok = skip_to (ldfile, collate, charmap, 0);
+		  if (nowtok == tok_else)
+		    collate->else_action = else_seen;
+		  else if (nowtok == tok_elifdef)
+		    {
+		      nowtok = tok_ifdef;
+		      goto found_ifdef;
+		    }
+		  else if (nowtok == tok_elifndef)
+		    {
+		      nowtok = tok_ifndef;
+		      goto found_ifdef;
+		    }
+		  else if (nowtok == tok_eof)
+		    goto seen_eof;
+		  else if (nowtok == tok_end)
+		    goto seen_end;
+		}
+	    }
+	  else
+	    {
+	      /* XXX Should it really become necessary to support nested
+		 preprocessor handling we will push the state here.  */
+	      lr_error (ldfile, _("%s: nested conditionals not supported"),
+			"LC_COLLATE");
+	      nowtok = skip_to (ldfile, collate, charmap, 1);
+	      if (nowtok == tok_eof)
+		goto seen_eof;
+	      else if (nowtok == tok_end)
+		goto seen_end;
+	    }
+	  break;
+
+	case tok_elifdef:
+	case tok_elifndef:
+	case tok_else:
+	  if (ignore_content)
+	    {
+	      lr_ignore_rest (ldfile, 0);
+	      break;
+	    }
+
+	  lr_ignore_rest (ldfile, 1);
+
+	  if (collate->else_action == else_ignore)
+	    {
+	      /* Ignore everything until the endif.  */
+	      nowtok = skip_to (ldfile, collate, charmap, 1);
+	      if (nowtok == tok_eof)
+		goto seen_eof;
+	      else if (nowtok == tok_end)
+		goto seen_end;
+	    }
+	  else
+	    {
+	      assert (collate->else_action == else_none);
+	      lr_error (ldfile, _("\
+%s: '%s' without matching 'ifdef' or 'ifndef'"), "LC_COLLATE",
+			nowtok == tok_else ? "else"
+			: nowtok == tok_elifdef ? "elifdef" : "elifndef");
+	    }
+	  break;
+
+	case tok_endif:
+	  if (ignore_content)
+	    {
+	      lr_ignore_rest (ldfile, 0);
+	      break;
+	    }
+
+	  lr_ignore_rest (ldfile, 1);
+
+	  if (collate->else_action != else_ignore
+	      && collate->else_action != else_seen)
+	    lr_error (ldfile, _("\
+%s: 'endif' without matching 'ifdef' or 'ifndef'"), "LC_COLLATE");
+
+	  /* XXX If we support nested preprocessor directives we pop
+	     the state here.  */
+	  collate->else_action = else_none;
+	  break;
+
 	default:
 	err_label:
 	  SYNTAX_ERROR (_("%s: syntax error"), "LC_COLLATE");
@@ -3817,6 +4110,7 @@ error while adding equivalent collating symbol"));
       nowtok = now->tok;
     }
 
+ seen_eof:
   /* When we come here we reached the end of the file.  */
   lr_error (ldfile, _("%s: premature end of file"), "LC_COLLATE");
 }

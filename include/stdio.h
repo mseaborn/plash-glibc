@@ -27,6 +27,7 @@ extern int __vsscanf (__const char *__restrict __s,
 		      _G_va_list __arg)
      __attribute__ ((__format__ (__scanf__, 2, 0)));
 
+#ifndef __cplusplus
 extern int __sprintf_chk (char *, int, size_t, const char *, ...) __THROW;
 extern int __snprintf_chk (char *, size_t, int, size_t, const char *, ...)
      __THROW;
@@ -40,6 +41,23 @@ extern int __vprintf_chk (int, const char *, _G_va_list);
 extern int __vfprintf_chk (FILE *, int, const char *, _G_va_list);
 extern char *__fgets_unlocked_chk (char *buf, size_t size, int n, FILE *fp);
 extern char *__fgets_chk (char *buf, size_t size, int n, FILE *fp);
+#endif
+
+extern int __isoc99_fscanf (FILE *__restrict __stream,
+			    __const char *__restrict __format, ...) __wur;
+extern int __isoc99_scanf (__const char *__restrict __format, ...) __wur;
+extern int __isoc99_sscanf (__const char *__restrict __s,
+			    __const char *__restrict __format, ...) __THROW;
+extern int __isoc99_vfscanf (FILE *__restrict __s,
+			     __const char *__restrict __format,
+			     _G_va_list __arg) __wur;
+extern int __isoc99_vscanf (__const char *__restrict __format,
+			    _G_va_list __arg) __wur;
+extern int __isoc99_vsscanf (__const char *__restrict __s,
+			     __const char *__restrict __format,
+			     _G_va_list __arg) __THROW;
+libc_hidden_proto (__isoc99_vsscanf)
+libc_hidden_proto (__isoc99_vfscanf)
 
 /* Prototypes for compatibility functions.  */
 extern FILE *__new_tmpfile (void);
@@ -54,17 +72,18 @@ extern int __path_search (char *__tmpl, size_t __tmpl_len,
 			  __const char *__dir, __const char *__pfx,
 			  int __try_tempdir);
 
-extern int __gen_tempname (char *__tmpl, int __kind);
+extern int __gen_tempname (char *__tmpl, int __flags, int __kind);
 /* The __kind argument to __gen_tempname may be one of: */
 #  define __GT_FILE	0	/* create a file */
-#  define __GT_BIGFILE	1	/* create a file, using open64 */
-#  define __GT_DIR	2	/* create a directory */
-#  define __GT_NOCREATE	3	/* just find a name not currently in use */
+#  define __GT_DIR	1	/* create a directory */
+#  define __GT_NOCREATE	2	/* just find a name not currently in use */
 
 /* Print out MESSAGE on the error output and abort.  */
 extern void __libc_fatal (__const char *__message)
      __attribute__ ((__noreturn__));
 extern void __libc_message (int do_abort, __const char *__fnt, ...);
+extern void __fortify_fail (const char *msg) __attribute__ ((noreturn));
+libc_hidden_proto (__fortify_fail)
 
 /* Acquire ownership of STREAM.  */
 extern void __flockfile (FILE *__stream);
@@ -119,6 +138,7 @@ libc_hidden_proto (rewind)
 libc_hidden_proto (fileno)
 libc_hidden_proto (fwrite)
 libc_hidden_proto (fseek)
+libc_hidden_proto (ftello)
 libc_hidden_proto (fflush_unlocked)
 libc_hidden_proto (fread_unlocked)
 libc_hidden_proto (fwrite_unlocked)

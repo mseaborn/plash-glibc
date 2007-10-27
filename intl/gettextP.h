@@ -1,5 +1,6 @@
 /* Header describing internals of libintl library.
-   Copyright (C) 1995-1999, 2000, 2001, 2004-2005 Free Software Foundation, Inc.
+   Copyright (C) 1995-1999, 2000, 2001, 2004-2005, 2007
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Written by Ulrich Drepper <drepper@cygnus.com>, 1995.
 
@@ -146,8 +147,9 @@ struct loaded_domain
   /* Cache of charset conversions of the translated strings.  */
   struct converted_domain *conversions;
   size_t nconversions;
+  __libc_rwlock_define (, conversions_lock);
 
-  struct expression *plural;
+  const struct expression *plural;
   unsigned long int nplurals;
 };
 

@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2005 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2005, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -20,15 +20,8 @@
 #include <sysdep.h>
 #include <shlib-compat.h>
 #include <pthread-errnos.h>
-
-#ifndef UP
-# define LOCK lock
-#else
-# define
-#endif
-
-#define SYS_futex		240
-#define FUTEX_WAKE		1
+#include <structsem.h>
+#include <lowlevellock.h>
 
 
 	.text
@@ -40,19 +33,27 @@ __new_sem_post:
 	pushl	%ebx
 
 	movl	8(%esp), %ebx
-	movl	$1, %edx
-	LOCK
-	xaddl	%edx, (%ebx)
 
-	movl	$SYS_futex, %eax
+	LOCK
+#if VALUE == 0
+	addl	$1, (%ebx)
+#else
+	addl	$1, VALUE(%ebx)
+#endif
+
+	cmpl	$0, NWAITERS(%ebx)
+	je	2f
+
 	movl	$FUTEX_WAKE, %ecx
-	addl	$1, %edx
+	orl	PRIVATE(%ebx), %ecx
+	movl	$1, %edx
+	movl	$SYS_futex, %eax
 	ENTER_KERNEL
 
 	testl	%eax, %eax
 	js	1f
 
-	xorl	%eax, %eax
+2:	xorl	%eax, %eax
 	popl	%ebx
 	ret
 
@@ -85,7 +86,26 @@ __new_sem_post:
 	versioned_symbol(libpthread, __new_sem_post, sem_post, GLIBC_2_1)
 #if SHLIB_COMPAT(libpthread, GLIBC_2_0, GLIBC_2_1)
 	.global	__old_sem_post
-__old_sem_post = __new_sem_post
+	.type	__old_sem_post,@function
+__old_sem_post:
+	pushl	%ebx
+
+	movl	8(%esp), %ebx
+	LOCK
+	addl	$1, (%ebx)
+
+	movl	$SYS_futex, %eax
+	movl	$FUTEX_WAKE, %ecx
+	movl	$1, %edx
+	ENTER_KERNEL
+
+	testl	%eax, %eax
+	js	1b
+
+	xorl	%eax, %eax
+	popl	%ebx
+	ret
+	.size	__old_sem_post,.-__old_sem_post
 	compat_symbol(libpthread, __old_sem_post, sem_post, GLIBC_2_0)
 #endif
 

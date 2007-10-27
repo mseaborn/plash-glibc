@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -18,18 +18,9 @@
    02111-1307 USA.  */
 
 #include <sysdep.h>
+#include <lowlevellock.h>
 #include <lowlevelrwlock.h>
-
-
-#define SYS_futex		240
-#define FUTEX_WAIT		0
-#define FUTEX_WAKE		1
-
-#ifndef UP
-# define LOCK lock
-#else
-# define LOCK
-#endif
+#include <kernel-features.h>
 
 
 	.text
@@ -61,9 +52,8 @@ __pthread_rwlock_unlock:
 
 5:	movl	$0, WRITER(%edi)
 
-	movl	$1, %ecx
+	movl	$1, %edx
 	leal	WRITERS_WAKEUP(%edi), %ebx
-	movl	%ecx, %edx
 	cmpl	$0, WRITERS_QUEUED(%edi)
 	jne	0f
 
@@ -83,7 +73,16 @@ __pthread_rwlock_unlock:
 #endif
 	jne	7f
 
-8:	movl	$SYS_futex, %eax
+8:
+#ifdef __ASSUME_PRIVATE_FUTEX
+	movzbl	PSHARED(%edi), %ecx
+	xorl	$FUTEX_PRIVATE_FLAG|FUTEX_WAKE, %ecx
+#else
+	movzbl	PSHARED(%edi), %ecx
+	orl	$FUTEX_WAKE, %ecx
+	xorl	%gs:PRIVATE_FUTEX, %ecx
+#endif
+	movl	$SYS_futex, %eax
 	ENTER_KERNEL
 
 	xorl	%eax, %eax
@@ -107,29 +106,32 @@ __pthread_rwlock_unlock:
 
 1:
 #if MUTEX == 0
-	movl	%edi, %ecx
+	movl	%edi, %edx
 #else
-	leal	MUTEX(%edx), %ecx
+	leal	MUTEX(%edi), %edx
 #endif
-	call	__lll_mutex_lock_wait
+	movl	PSHARED(%edi), %ecx
+	call	__lll_lock_wait
 	jmp	2b
 
 3:
 #if MUTEX == 0
 	movl	%edi, %eax
 #else
-	leal	MUTEX(%edx), %eax
+	leal	MUTEX(%edi), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+	movl	PSHARED(%edi), %ecx
+	call	__lll_unlock_wake
 	jmp	4b
 
 7:
 #if MUTEX == 0
 	movl	%edi, %eax
 #else
-	leal	MUTEX(%edx), %eax
+	leal	MUTEX(%edi), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+	movl	PSHARED(%edi), %ecx
+	call	__lll_unlock_wake
 	jmp	8b
 
 	.size	__pthread_rwlock_unlock,.-__pthread_rwlock_unlock

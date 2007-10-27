@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2004, 2006, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -19,18 +19,10 @@
 
 #include <sysdep.h>
 #include <shlib-compat.h>
+#include <lowlevellock.h>
 #include <lowlevelcond.h>
 #include <tcb-offsets.h>
-
-#ifdef UP
-# define LOCK
-#else
-# define LOCK lock
-#endif
-
-#define SYS_futex		240
-#define FUTEX_WAIT		0
-#define FUTEX_WAKE		1
+#include <kernel-features.h>
 
 
 	.text
@@ -80,7 +72,7 @@ __pthread_cond_wait:
 	addl	$1, total_seq(%ebx)
 	adcl	$0, total_seq+4(%ebx)
 	addl	$1, cond_futex(%ebx)
-	addl	$(1 << clock_bits), cond_nwaiters(%ebx)
+	addl	$(1 << nwaiters_shift), cond_nwaiters(%ebx)
 
 #define FRAME_SIZE 16
 	subl	$FRAME_SIZE, %esp
@@ -109,7 +101,20 @@ __pthread_cond_wait:
 4:	call	__pthread_enable_asynccancel
 	movl	%eax, (%esp)
 
-	movl	%esi, %ecx	/* movl $FUTEX_WAIT, %ecx */
+#if FUTEX_PRIVATE_FLAG > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	sete	%cl
+	subl	$1, %ecx
+#ifdef __ASSUME_PRIVATE_FUTEX
+	andl	$FUTEX_PRIVATE_FLAG, %ecx
+#else
+	andl	%gs:PRIVATE_FUTEX, %ecx
+#endif
+#if FUTEX_WAIT != 0
+	addl	$FUTEX_WAIT, %ecx
+#endif
 	movl	%edi, %edx
 	addl	$cond_futex, %ebx
 .Ladd_cond_futex:
@@ -157,7 +162,7 @@ __pthread_cond_wait:
 	adcl	$0, woken_seq+4(%ebx)
 
 	/* Unlock */
-16:	subl	$(1 << clock_bits), cond_nwaiters(%ebx)
+16:	subl	$(1 << nwaiters_shift), cond_nwaiters(%ebx)
 
 	/* Wake up a thread which wants to destroy the condvar object.  */
 	movl	total_seq(%ebx), %eax
@@ -165,12 +170,23 @@ __pthread_cond_wait:
 	cmpl	$0xffffffff, %eax
 	jne	17f
 	movl	cond_nwaiters(%ebx), %eax
-	andl	$~((1 << clock_bits) - 1), %eax
+	andl	$~((1 << nwaiters_shift) - 1), %eax
 	jne	17f
 
 	addl	$cond_nwaiters, %ebx
 	movl	$SYS_futex, %eax
-	movl	$FUTEX_WAKE, %ecx
+#if FUTEX_PRIVATE_FLAG > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex-cond_nwaiters(%ebx)
+	sete	%cl
+	subl	$1, %ecx
+#ifdef __ASSUME_PRIVATE_FUTEX
+	andl	$FUTEX_PRIVATE_FLAG, %ecx
+#else
+	andl	%gs:PRIVATE_FUTEX, %ecx
+#endif
+	addl	$FUTEX_WAKE, %ecx
 	movl	$1, %edx
 	ENTER_KERNEL
 	subl	$cond_nwaiters, %ebx
@@ -202,11 +218,21 @@ __pthread_cond_wait:
 1:
 .LSbl1:
 #if cond_lock == 0
-	movl	%ebx, %ecx
+	movl	%ebx, %edx
 #else
-	leal	cond_lock(%ebx), %ecx
+	leal	cond_lock(%ebx), %edx
 #endif
-	call	__lll_mutex_lock_wait
+#if (LLL_SHARED-LLL_PRIVATE) > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	setne	%cl
+	subl	$1, %ecx
+	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+#if LLL_PRIVATE != 0
+	addl	$LLL_PRIVATE, %ecx
+#endif
+	call	__lll_lock_wait
 	jmp	2b
 
 	/* Unlock in loop requires waekup.  */
@@ -217,17 +243,37 @@ __pthread_cond_wait:
 #else
 	leal	cond_lock(%ebx), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+#if (LLL_SHARED-LLL_PRIVATE) > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	setne	%cl
+	subl	$1, %ecx
+	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+#if LLL_PRIVATE != 0
+	addl	$LLL_PRIVATE, %ecx
+#endif
+	call	__lll_unlock_wake
 	jmp	4b
 
 	/* Locking in loop failed.  */
 5:
 #if cond_lock == 0
-	movl	%ebx, %ecx
+	movl	%ebx, %edx
 #else
-	leal	cond_lock(%ebx), %ecx
+	leal	cond_lock(%ebx), %edx
 #endif
-	call	__lll_mutex_lock_wait
+#if (LLL_SHARED-LLL_PRIVATE) > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	setne	%cl
+	subl	$1, %ecx
+	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+#if LLL_PRIVATE != 0
+	addl	$LLL_PRIVATE, %ecx
+#endif
+	call	__lll_lock_wait
 	jmp	6b
 
 	/* Unlock after loop requires wakeup.  */
@@ -237,7 +283,17 @@ __pthread_cond_wait:
 #else
 	leal	cond_lock(%ebx), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+#if (LLL_SHARED-LLL_PRIVATE) > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	setne	%cl
+	subl	$1, %ecx
+	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+#if LLL_PRIVATE != 0
+	addl	$LLL_PRIVATE, %ecx
+#endif
+	call	__lll_unlock_wake
 	jmp	11b
 
 	/* The initial unlocking of the mutex failed.  */
@@ -257,7 +313,17 @@ __pthread_cond_wait:
 #else
 	leal	cond_lock(%ebx), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+#if (LLL_SHARED-LLL_PRIVATE) > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	setne	%cl
+	subl	$1, %ecx
+	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+#if LLL_PRIVATE != 0
+	addl	$LLL_PRIVATE, %ecx
+#endif
+	call	__lll_unlock_wake
 
 	movl	%esi, %eax
 	jmp	14b
@@ -287,11 +353,21 @@ __condvar_w_cleanup:
 	jz	1f
 
 #if cond_lock == 0
-	movl	%ebx, %ecx
+	movl	%ebx, %edx
 #else
-	leal	cond_lock(%ebx), %ecx
+	leal	cond_lock(%ebx), %edx
 #endif
-	call	__lll_mutex_lock_wait
+#if (LLL_SHARED-LLL_PRIVATE) > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	setne	%cl
+	subl	$1, %ecx
+	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+#if LLL_PRIVATE != 0
+	addl	$LLL_PRIVATE, %ecx
+#endif
+	call	__lll_lock_wait
 
 1:	movl	broadcast_seq(%ebx), %eax
 	cmpl	12(%esp), %eax
@@ -315,7 +391,7 @@ __condvar_w_cleanup:
 7:	addl	$1, woken_seq(%ebx)
 	adcl	$0, woken_seq+4(%ebx)
 
-3:	subl	$(1 << clock_bits), cond_nwaiters(%ebx)
+3:	subl	$(1 << nwaiters_shift), cond_nwaiters(%ebx)
 
 	/* Wake up a thread which wants to destroy the condvar object.  */
 	xorl	%edi, %edi
@@ -324,12 +400,23 @@ __condvar_w_cleanup:
 	cmpl	$0xffffffff, %eax
 	jne	4f
 	movl	cond_nwaiters(%ebx), %eax
-	andl	$~((1 << clock_bits) - 1), %eax
+	andl	$~((1 << nwaiters_shift) - 1), %eax
 	jne	4f
 
 	addl	$cond_nwaiters, %ebx
 	movl	$SYS_futex, %eax
-	movl	$FUTEX_WAKE, %ecx
+#if FUTEX_PRIVATE_FLAG > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex-cond_nwaiters(%ebx)
+	sete	%cl
+	subl	$1, %ecx
+#ifdef __ASSUME_PRIVATE_FUTEX
+	andl	$FUTEX_PRIVATE_FLAG, %ecx
+#else
+	andl	%gs:PRIVATE_FUTEX, %ecx
+#endif
+	addl	$FUTEX_WAKE, %ecx
 	movl	$1, %edx
 	ENTER_KERNEL
 	subl	$cond_nwaiters, %ebx
@@ -348,13 +435,34 @@ __condvar_w_cleanup:
 #else
 	leal	cond_lock(%ebx), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+#if (LLL_SHARED-LLL_PRIVATE) > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex(%ebx)
+	setne	%cl
+	subl	$1, %ecx
+	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+#if LLL_PRIVATE != 0
+	addl	$LLL_PRIVATE, %ecx
+#endif
+	call	__lll_unlock_wake
 
 	/* Wake up all waiters to make sure no signal gets lost.  */
 2:	testl	%edi, %edi
 	jnz	5f
 	addl	$cond_futex, %ebx
-	movl	$FUTEX_WAKE, %ecx
+#if FUTEX_PRIVATE_FLAG > 255
+	xorl	%ecx, %ecx
+#endif
+	cmpl	$-1, dep_mutex-cond_futex(%ebx)
+	sete	%cl
+	subl	$1, %ecx
+#ifdef __ASSUME_PRIVATE_FUTEX
+	andl	$FUTEX_PRIVATE_FLAG, %ecx
+#else
+	andl	%gs:PRIVATE_FUTEX, %ecx
+#endif
+	addl	$FUTEX_WAKE, %ecx
 	movl	$SYS_futex, %eax
 	movl	$0x7fffffff, %edx
 	ENTER_KERNEL
@@ -468,12 +576,12 @@ __condvar_w_cleanup:
 	.uleb128 16
 	.byte	0x83				# DW_CFA_offset %ebx
 	.uleb128 4
-	.byte	2				# DW_CFA_advance_loc1
-	.byte	.Lsubl-.Lpush_ebx
+	.byte	4				# DW_CFA_advance_loc4
+	.4byte	.Lsubl-.Lpush_ebx
 	.byte	14				# DW_CFA_def_cfa_offset
 	.uleb128 16+FRAME_SIZE
-	.byte	2				# DW_CFA_advance_loc1
-	.byte	.Laddl-.Lsubl
+	.byte	4				# DW_CFA_advance_loc4
+	.4byte	.Laddl-.Lsubl
 	.byte	14				# DW_CFA_def_cfa_offset
 	.uleb128 16
 	.byte	0x40+ .Lpop_ebx-.Laddl		# DW_CFA_advance_loc+N
@@ -497,13 +605,16 @@ __condvar_w_cleanup:
 	.uleb128 3
 	.byte	0x83				# DW_CFA_offset %ebx
 	.uleb128 4
-	.byte	0x40+.LSbl2-.LSbl1		# DW_CFA_advance_loc+N
+	.byte	4				# DW_CFA_advance_loc4
+	.4byte	.LSbl2-.LSbl1
 	.byte	14				# DW_CFA_def_cfa_offset
 	.uleb128 16+FRAME_SIZE
-	.byte	0x40+.LSbl3-.LSbl2		# DW_CFA_advance_loc+N
+	.byte	4				# DW_CFA_advance_loc4
+	.4byte	.LSbl3-.LSbl2
 	.byte	14				# DW_CFA_def_cfa_offset
 	.uleb128 16
-	.byte	0x40+.LSbl4-.LSbl3		# DW_CFA_advance_loc+N
+	.byte	4				# DW_CFA_advance_loc4
+	.4byte	.LSbl4-.LSbl3
 	.byte	14				# DW_CFA_def_cfa_offset
 	.uleb128 16+FRAME_SIZE
 	.align	4

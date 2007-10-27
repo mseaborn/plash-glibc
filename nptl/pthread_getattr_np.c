@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2004, 2006, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -39,11 +39,7 @@ pthread_getattr_np (thread_id, attr)
   struct pthread_attr *iattr = (struct pthread_attr *) attr;
   int ret = 0;
 
-  /* We have to handle cancellation in the following code since we are
-     locking another threads desriptor.  */
-  pthread_cleanup_push ((void (*) (void *)) lll_unlock_wake_cb, &thread->lock);
-
-  lll_lock (thread->lock);
+  lll_lock (thread->lock, LLL_PRIVATE);
 
   /* The thread library is responsible for keeping the values in the
      thread desriptor up-to-date in case the user changes them.  */
@@ -168,14 +164,16 @@ pthread_getattr_np (thread_id, attr)
 	{
 	  free (cpuset);
 	  if (ret == ENOSYS)
-	    /* There is no such functionality.  */
-	    ret = 0;
+	    {	  
+	      /* There is no such functionality.  */
+	      ret = 0;
+	      iattr->cpuset = NULL;
+	      iattr->cpusetsize = 0;
+	    }
 	}
     }
 
-  lll_unlock (thread->lock);
-
-  pthread_cleanup_pop (0);
+  lll_unlock (thread->lock, LLL_PRIVATE);
 
   return ret;
 }

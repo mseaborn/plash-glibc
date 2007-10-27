@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2004, 2006, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -19,28 +19,53 @@
 
 #include <sysdep.h>
 #include <pthread-errnos.h>
+#include <kernel-features.h>
+#include <lowlevellock.h>
 
 	.text
 
-#ifndef LOCK
-# ifdef UP
-#  define LOCK
+#ifdef __ASSUME_PRIVATE_FUTEX
+# define LOAD_PRIVATE_FUTEX_WAIT(reg) \
+	movl	$(FUTEX_WAIT | FUTEX_PRIVATE_FLAG), reg
+# define LOAD_PRIVATE_FUTEX_WAKE(reg) \
+	movl	$(FUTEX_WAKE | FUTEX_PRIVATE_FLAG), reg
+# define LOAD_FUTEX_WAIT(reg) \
+	xorl	$(FUTEX_WAIT | FUTEX_PRIVATE_FLAG), reg
+# define LOAD_FUTEX_WAKE(reg) \
+	xorl	$(FUTEX_WAKE | FUTEX_PRIVATE_FLAG), reg
+#else
+# if FUTEX_WAIT == 0
+#  define LOAD_PRIVATE_FUTEX_WAIT(reg) \
+	movl	%gs:PRIVATE_FUTEX, reg
 # else
-#  define LOCK lock
+#  define LOAD_PRIVATE_FUTEX_WAIT(reg) \
+	movl	%gs:PRIVATE_FUTEX, reg ; \
+	orl	$FUTEX_WAIT, reg
 # endif
+# define LOAD_PRIVATE_FUTEX_WAKE(reg) \
+	movl	%gs:PRIVATE_FUTEX, reg ; \
+	orl	$FUTEX_WAKE, reg
+# if FUTEX_WAIT == 0
+#  define LOAD_FUTEX_WAIT(reg) \
+	xorl	$FUTEX_PRIVATE_FLAG, reg ; \
+	andl	%gs:PRIVATE_FUTEX, reg
+# else
+#  define LOAD_FUTEX_WAIT(reg) \
+	xorl	$FUTEX_PRIVATE_FLAG, reg ; \
+	andl	%gs:PRIVATE_FUTEX, reg ; \
+	orl	$FUTEX_WAIT, reg
+# endif
+# define LOAD_FUTEX_WAKE(reg) \
+	xorl	$FUTEX_PRIVATE_FLAG, reg ; \
+	andl	%gs:PRIVATE_FUTEX, reg ; \
+	orl	$FUTEX_WAKE, reg
 #endif
 
-#define SYS_gettimeofday	__NR_gettimeofday
-#define SYS_futex		240
-#define FUTEX_WAIT		0
-#define FUTEX_WAKE		1
-
-
-	.globl	__lll_mutex_lock_wait
-	.type	__lll_mutex_lock_wait,@function
-	.hidden	__lll_mutex_lock_wait
+	.globl	__lll_lock_wait_private
+	.type	__lll_lock_wait_private,@function
+	.hidden	__lll_lock_wait_private
 	.align	16
-__lll_mutex_lock_wait:
+__lll_lock_wait_private:
 	cfi_startproc
 	pushl	%edx
 	cfi_adjust_cfa_offset(4)
@@ -55,7 +80,7 @@ __lll_mutex_lock_wait:
 	movl	$2, %edx
 	movl	%ecx, %ebx
 	xorl	%esi, %esi	/* No timeout.  */
-	xorl	%ecx, %ecx	/* movl $FUTEX_WAIT, %ecx */
+	LOAD_PRIVATE_FUTEX_WAIT (%ecx)
 
 	cmpl	%edx, %eax	/* NB:	 %edx == 2 */
 	jne 2f
@@ -80,15 +105,60 @@ __lll_mutex_lock_wait:
 	cfi_restore(%edx)
 	ret
 	cfi_endproc
-	.size	__lll_mutex_lock_wait,.-__lll_mutex_lock_wait
-
+	.size	__lll_lock_wait_private,.-__lll_lock_wait_private
 
 #ifdef NOT_IN_libc
-	.globl	__lll_mutex_timedlock_wait
-	.type	__lll_mutex_timedlock_wait,@function
-	.hidden	__lll_mutex_timedlock_wait
+	.globl	__lll_lock_wait
+	.type	__lll_lock_wait,@function
+	.hidden	__lll_lock_wait
 	.align	16
-__lll_mutex_timedlock_wait:
+__lll_lock_wait:
+	cfi_startproc
+	pushl	%edx
+	cfi_adjust_cfa_offset(4)
+	pushl	%ebx
+	cfi_adjust_cfa_offset(4)
+	pushl	%esi
+	cfi_adjust_cfa_offset(4)
+	cfi_offset(%edx, -8)
+	cfi_offset(%ebx, -12)
+	cfi_offset(%esi, -16)
+
+	movl	%edx, %ebx
+	movl	$2, %edx
+	xorl	%esi, %esi	/* No timeout.  */
+	LOAD_FUTEX_WAIT (%ecx)
+
+	cmpl	%edx, %eax	/* NB:	 %edx == 2 */
+	jne 2f
+
+1:	movl	$SYS_futex, %eax
+	ENTER_KERNEL
+
+2:	movl	%edx, %eax
+	xchgl	%eax, (%ebx)	/* NB:	 lock is implied */
+
+	testl	%eax, %eax
+	jnz	1b
+
+	popl	%esi
+	cfi_adjust_cfa_offset(-4)
+	cfi_restore(%esi)
+	popl	%ebx
+	cfi_adjust_cfa_offset(-4)
+	cfi_restore(%ebx)
+	popl	%edx
+	cfi_adjust_cfa_offset(-4)
+	cfi_restore(%edx)
+	ret
+	cfi_endproc
+	.size	__lll_lock_wait,.-__lll_lock_wait
+
+	.globl	__lll_timedlock_wait
+	.type	__lll_timedlock_wait,@function
+	.hidden	__lll_timedlock_wait
+	.align	16
+__lll_timedlock_wait:
 	cfi_startproc
 	/* Check for a valid timeout value.  */
 	cmpl	$1000000000, 4(%edx)
@@ -118,7 +188,7 @@ __lll_mutex_timedlock_wait:
 	/* Get current time.  */
 	movl	%esp, %ebx
 	xorl	%ecx, %ecx
-	movl	$SYS_gettimeofday, %eax
+	movl	$__NR_gettimeofday, %eax
 	ENTER_KERNEL
 
 	/* Compute relative timeout.  */
@@ -151,7 +221,8 @@ __lll_mutex_timedlock_wait:
 
 	/* Futex call.  */
 	movl	%esp, %esi
-	xorl	%ecx, %ecx	/* movl $FUTEX_WAIT, %ecx */
+	movl	16(%esp), %ecx
+	LOAD_FUTEX_WAIT (%ecx)
 	movl	$SYS_futex, %eax
 	ENTER_KERNEL
 	movl	%eax, %ecx
@@ -201,44 +272,14 @@ __lll_mutex_timedlock_wait:
 5:	movl	$ETIMEDOUT, %eax
 	jmp	6b
 	cfi_endproc
-	.size	__lll_mutex_timedlock_wait,.-__lll_mutex_timedlock_wait
+	.size	__lll_timedlock_wait,.-__lll_timedlock_wait
 #endif
 
-
-#ifdef NOT_IN_libc
-	.globl	lll_unlock_wake_cb
-	.type	lll_unlock_wake_cb,@function
-	.hidden	lll_unlock_wake_cb
+	.globl	__lll_unlock_wake_private
+	.type	__lll_unlock_wake_private,@function
+	.hidden	__lll_unlock_wake_private
 	.align	16
-lll_unlock_wake_cb:
-	pushl	%ebx
-	pushl	%ecx
-	pushl	%edx
-
-	movl	20(%esp), %ebx
-	LOCK
-	subl	$1, (%ebx)
-	je	1f
-
-	movl	$FUTEX_WAKE, %ecx
-	movl	$1, %edx	/* Wake one thread.  */
-	movl	$SYS_futex, %eax
-	movl	$0, (%ebx)
-	ENTER_KERNEL
-
-1:	popl	%edx
-	popl	%ecx
-	popl	%ebx
-	ret
-	.size	lll_unlock_wake_cb,.-lll_unlock_wake_cb
-#endif
-
-
-	.globl	__lll_mutex_unlock_wake
-	.type	__lll_mutex_unlock_wake,@function
-	.hidden	__lll_mutex_unlock_wake
-	.align	16
-__lll_mutex_unlock_wake:
+__lll_unlock_wake_private:
 	cfi_startproc
 	pushl	%ebx
 	cfi_adjust_cfa_offset(4)
@@ -252,7 +293,7 @@ __lll_mutex_unlock_wake:
 
 	movl	%eax, %ebx
 	movl	$0, (%eax)
-	movl	$FUTEX_WAKE, %ecx
+	LOAD_PRIVATE_FUTEX_WAKE (%ecx)
 	movl	$1, %edx	/* Wake one thread.  */
 	movl	$SYS_futex, %eax
 	ENTER_KERNEL
@@ -268,10 +309,45 @@ __lll_mutex_unlock_wake:
 	cfi_restore(%ebx)
 	ret
 	cfi_endproc
-	.size	__lll_mutex_unlock_wake,.-__lll_mutex_unlock_wake
-
+	.size	__lll_unlock_wake_private,.-__lll_unlock_wake_private
 
 #ifdef NOT_IN_libc
+	.globl	__lll_unlock_wake
+	.type	__lll_unlock_wake,@function
+	.hidden	__lll_unlock_wake
+	.align	16
+__lll_unlock_wake:
+	cfi_startproc
+	pushl	%ebx
+	cfi_adjust_cfa_offset(4)
+	pushl	%ecx
+	cfi_adjust_cfa_offset(4)
+	pushl	%edx
+	cfi_adjust_cfa_offset(4)
+	cfi_offset(%ebx, -8)
+	cfi_offset(%ecx, -12)
+	cfi_offset(%edx, -16)
+
+	movl	%eax, %ebx
+	movl	$0, (%eax)
+	LOAD_FUTEX_WAKE (%ecx)
+	movl	$1, %edx	/* Wake one thread.  */
+	movl	$SYS_futex, %eax
+	ENTER_KERNEL
+
+	popl	%edx
+	cfi_adjust_cfa_offset(-4)
+	cfi_restore(%edx)
+	popl	%ecx
+	cfi_adjust_cfa_offset(-4)
+	cfi_restore(%ecx)
+	popl	%ebx
+	cfi_adjust_cfa_offset(-4)
+	cfi_restore(%ebx)
+	ret
+	cfi_endproc
+	.size	__lll_unlock_wake,.-__lll_unlock_wake
+
 	.globl	__lll_timedwait_tid
 	.type	__lll_timedwait_tid,@function
 	.hidden	__lll_timedwait_tid
@@ -289,7 +365,7 @@ __lll_timedwait_tid:
 	/* Get current time.  */
 2:	movl	%esp, %ebx
 	xorl	%ecx, %ecx
-	movl	$SYS_gettimeofday, %eax
+	movl	$__NR_gettimeofday, %eax
 	ENTER_KERNEL
 
 	/* Compute relative timeout.  */
@@ -314,6 +390,8 @@ __lll_timedwait_tid:
 	jz	4f
 
 	movl	%esp, %esi
+	/* XXX The kernel so far uses global futex for the wakeup at
+	   all times.  */
 	xorl	%ecx, %ecx	/* movl $FUTEX_WAIT, %ecx */
 	movl	%ebp, %ebx
 	movl	$SYS_futex, %eax

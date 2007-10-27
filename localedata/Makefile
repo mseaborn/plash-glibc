@@ -41,7 +41,7 @@ test-srcs := collate-test xfrm-test tst-fmon tst-rpmatch tst-trans \
 	     tst-mbswcs1 tst-mbswcs2 tst-mbswcs3 tst-mbswcs4 tst-mbswcs5 \
 	     tst-ctype tst-wctype tst-langinfo tst-numeric
 test-input := de_DE.ISO-8859-1 en_US.ISO-8859-1 da_DK.ISO-8859-1 \
-	      hr_HR.ISO-8859-2 sv_SE.ISO-8859-1 tr_TR.UTF-8
+	      hr_HR.ISO-8859-2 sv_SE.ISO-8859-1 tr_TR.UTF-8 fr_FR.UTF-8
 test-input-data = $(addsuffix .in, $(basename $(test-input)))
 test-output := $(foreach s, .out .xout, \
 			 $(addsuffix $s, $(basename $(test-input))))
@@ -93,7 +93,7 @@ locale_test_suite := tst_iswalnum tst_iswalpha tst_iswcntrl            \
 
 tests = $(locale_test_suite) tst-digits tst-setlocale bug-iconv-trans \
 	tst-leaks tst-mbswcs6 tst-xlocale1 tst-xlocale2 bug-usesetlocale \
-	tst-strfmon1 tst-sscanf
+	tst-strfmon1 tst-sscanf tst-strptime
 ifeq (yes,$(build-shared))
 ifneq (no,$(PERL))
 tests: $(objpfx)mtrace-tst-leaks
@@ -133,7 +133,7 @@ LOCALES := de_DE.ISO-8859-1 de_DE.UTF-8 en_US.ANSI_X3.4-1968 \
 	   en_US.ISO-8859-1 ja_JP.EUC-JP da_DK.ISO-8859-1 \
 	   hr_HR.ISO-8859-2 sv_SE.ISO-8859-1 ja_JP.SJIS fr_FR.ISO-8859-1 \
 	   vi_VN.TCVN5712-1 nb_NO.ISO-8859-1 nn_NO.ISO-8859-1 \
-	   tr_TR.UTF-8 cs_CZ.UTF-8 zh_TW.EUC-TW fa_IR.UTF-8
+	   tr_TR.UTF-8 cs_CZ.UTF-8 zh_TW.EUC-TW fa_IR.UTF-8 fr_FR.UTF-8
 LOCALE_SRCS := $(shell echo "$(LOCALES)"|sed 's/\([^ .]*\)[^ ]*/\1/g')
 CHARMAPS := $(shell echo "$(LOCALES)" | \
 		    sed -e 's/[^ .]*[.]\([^ ]*\)/\1/g' -e s/SJIS/SHIFT_JIS/g)
@@ -284,6 +284,7 @@ tst-mbswcs6-ENV = $(TEST_MBWC_ENV)
 tst-xlocale1-ENV = $(TEST_MBWC_ENV)
 tst-xlocale2-ENV = $(TEST_MBWC_ENV)
 tst-strfmon1-ENV = $(TEST_MBWC_ENV)
+tst-strptime-ENV = $(TEST_MBWC_ENV)
 
 tst-setlocale-ENV = LOCPATH=$(common-objpfx)localedata LC_ALL=ja_JP.EUC-JP
 

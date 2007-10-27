@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2004, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -26,14 +26,17 @@ int
 __pthread_cond_destroy (cond)
      pthread_cond_t *cond;
 {
+  int pshared = (cond->__data.__mutex == (void *) ~0l)
+		? LLL_SHARED : LLL_PRIVATE;
+
   /* Make sure we are alone.  */
-  lll_mutex_lock (cond->__data.__lock);
+  lll_lock (cond->__data.__lock, pshared);
 
   if (cond->__data.__total_seq > cond->__data.__wakeup_seq)
     {
       /* If there are still some waiters which have not been
 	 woken up, this is an application bug.  */
-      lll_mutex_unlock (cond->__data.__lock);
+      lll_unlock (cond->__data.__lock, pshared);
       return EBUSY;
     }
 
@@ -45,7 +48,7 @@ __pthread_cond_destroy (cond)
      pthread_cond_destroy needs to wait for them.  */
   unsigned int nwaiters = cond->__data.__nwaiters;
 
-  if (nwaiters >= (1 << COND_CLOCK_BITS))
+  if (nwaiters >= (1 << COND_NWAITERS_SHIFT))
     {
       /* Wake everybody on the associated mutex in case there are
          threads that have been requeued to it.
@@ -59,20 +62,21 @@ __pthread_cond_destroy (cond)
 	  && cond->__data.__mutex != (void *) ~0l)
 	{
 	  pthread_mutex_t *mut = (pthread_mutex_t *) cond->__data.__mutex;
-	  lll_futex_wake (&mut->__data.__lock, INT_MAX);
+	  lll_futex_wake (&mut->__data.__lock, INT_MAX,
+			  PTHREAD_MUTEX_PSHARED (mut));
 	}
 
       do
 	{
-	  lll_mutex_unlock (cond->__data.__lock);
+	  lll_unlock (cond->__data.__lock, pshared);
 
-	  lll_futex_wait (&cond->__data.__nwaiters, nwaiters);
+	  lll_futex_wait (&cond->__data.__nwaiters, nwaiters, pshared);
 
-	  lll_mutex_lock (cond->__data.__lock);
+	  lll_lock (cond->__data.__lock, pshared);
 
 	  nwaiters = cond->__data.__nwaiters;
 	}
-      while (nwaiters >= (1 << COND_CLOCK_BITS));
+      while (nwaiters >= (1 << COND_NWAITERS_SHIFT));
     }
 
   return 0;

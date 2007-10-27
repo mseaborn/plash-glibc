@@ -87,7 +87,7 @@ END LC_MONETARY
 
 LC_NUMERIC
 decimal_point             "<U002C>"
-thousands_sep             ""
+thousands_sep             "<U0020>"
 grouping                  0;0
 END LC_NUMERIC
 
@@ -129,6 +129,10 @@ t_fmt_ampm ""
 date_fmt       "<U0025><U0061><U0020><U0025><U0062><U0020><U0025><U0065>/
 <U0020><U0025><U0048><U003A><U0025><U004D><U003A><U0025><U0053><U0020>/
 <U0025><U005A><U0020><U0025><U0059>"
+
+week    7;19971201;4
+first_weekday 1
+first_workday 1
 END LC_TIME
 
 LC_PAPER

@@ -1,5 +1,5 @@
 /* O_*, F_*, FD_* bit values for Linux.
-   Copyright (C) 1995, 1996, 1997, 1998, 2000, 2004, 2006
+   Copyright (C) 1995, 1996, 1997, 1998, 2000, 2004, 2006, 2007
    Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -50,6 +50,7 @@
 # define O_DIRECTORY	0200000	/* Must be a directory.	 */
 # define O_NOFOLLOW	0400000	/* Do not follow links.	 */
 # define O_NOATIME     01000000 /* Do not set atime.  */
+# define O_CLOEXEC     02000000 /* Set close_on_exec.  */
 #endif
 
 /* For now Linux has synchronisity options for data and read operations.
@@ -97,6 +98,8 @@
 # define F_SETLEASE	1024	/* Set a lease.	 */
 # define F_GETLEASE	1025	/* Enquire what lease is active.  */
 # define F_NOTIFY	1026	/* Request notfications on a directory.	 */
+# define F_DUPFD_CLOEXEC 1030	/* Duplicate file descriptor with
+				   close-on-exit set.  */
 #endif
 
 /* For F_[GET|SET]FD.  */
@@ -220,17 +223,17 @@ extern int sync_file_range (int __fd, __off64_t __from, __off64_t __to,
 
 
 /* Splice address range into a pipe.  */
-extern int vmsplice (int __fdout, const struct iovec *__iov, size_t __count,
-		     unsigned int __flags);
+extern ssize_t vmsplice (int __fdout, const struct iovec *__iov,
+			 size_t __count, unsigned int __flags);
 
 /* Splice two files together.  */
-extern int splice (int __fdin, __off64_t *__offin, int __fdout,
-		   __off64_t *__offout, size_t __len, unsigned int __flags)
-    __THROW;
+extern ssize_t splice (int __fdin, __off64_t *__offin, int __fdout,
+		       __off64_t *__offout, size_t __len,
+		       unsigned int __flags);
 
 /* In-kernel implementation of tee for pipe buffers.  */
-extern int tee (int __fdin, int __fdout, size_t __len, unsigned int __flags)
-    __THROW;
+extern ssize_t tee (int __fdin, int __fdout, size_t __len,
+		    unsigned int __flags);
 
 #endif
 

@@ -1,4 +1,4 @@
-# Copyright (C) 1991-2002,2003,2004,2005,2006 Free Software Foundation, Inc.
+# Copyright (C) 1991-2006, 2007 Free Software Foundation, Inc.
 # This file is part of the GNU C Library.
 
 # The GNU C Library is free software; you can redistribute it and/or
@@ -31,7 +31,7 @@ headers	:= sys/uio.h bits/uio.h sys/ioctl.h bits/ioctls.h bits/ioctl-types.h \
 	   sys/select.h ustat.h sys/ustat.h bits/ustat.h sys/sysinfo.h \
 	   regexp.h bits/select.h bits/mman.h sys/xattr.h \
 	   syslog.h sys/syslog.h \
-	   bits/syslog.h bits/syslog-ldbl.h bits/syslog-path.h
+	   bits/syslog.h bits/syslog-ldbl.h bits/syslog-path.h bits/error.h
 
 routines := brk sbrk sstk ioctl \
 	    readv writev \
@@ -45,6 +45,7 @@ routines := brk sbrk sstk ioctl \
 	    gethostid sethostid \
 	    revoke vhangup \
 	    swapon swapoff mktemp mkstemp mkstemp64 mkdtemp \
+	    mkostemp mkostemp64 \
 	    ualarm usleep \
 	    gtty stty \
 	    ptrace \

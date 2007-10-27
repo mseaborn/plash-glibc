@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2007 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -18,20 +18,10 @@
    02111-1307 USA.  */
 
 #include <sysdep.h>
+#include <lowlevellock.h>
 #include <lowlevelrwlock.h>
 #include <pthread-errnos.h>
-
-
-#define SYS_gettimeofday	__NR_gettimeofday
-#define SYS_futex		240
-#define FUTEX_WAIT		0
-#define FUTEX_WAKE		1
-
-#ifndef UP
-# define LOCK lock
-#else
-# define LOCK
-#endif
+#include <kernel-features.h>
 
 
 	.text
@@ -86,7 +76,7 @@ pthread_rwlock_timedwrlock:
 	/* Get current time.  */
 11:	movl	%esp, %ebx
 	xorl	%ecx, %ecx
-	movl	$SYS_gettimeofday, %eax
+	movl	$__NR_gettimeofday, %eax
 	ENTER_KERNEL
 
 	/* Compute relative timeout.  */
@@ -106,13 +96,23 @@ pthread_rwlock_timedwrlock:
 	/* Futex call.  */
 	movl	%ecx, (%esp)	/* Store relative timeout.  */
 	movl	%edx, 4(%esp)
+
 	movl	%esi, %edx
-	xorl	%ecx, %ecx	/* movl $FUTEX_WAIT, %ecx */
+#ifdef __ASSUME_PRIVATE_FUTEX
+	movzbl	PSHARED(%ebp), %ecx
+	xorl	$FUTEX_PRIVATE_FLAG|FUTEX_WAIT, %ecx
+#else
+	movzbl	PSHARED(%ebp), %ecx
+# if FUTEX_WAIT != 0
+	orl	$FUTEX_WAIT, %ecx
+# endif
+	xorl	%gs:PRIVATE_FUTEX, %ecx
+#endif
 	movl	%esp, %esi
 	leal	WRITERS_WAKEUP(%ebp), %ebx
 	movl	$SYS_futex, %eax
 	ENTER_KERNEL
-	movl	%eax, %ecx
+	movl	%eax, %esi
 17:
 
 	/* Reget the lock.  */
@@ -127,14 +127,14 @@ pthread_rwlock_timedwrlock:
 	jnz	12f
 
 13:	subl	$1, WRITERS_QUEUED(%ebp)
-	cmpl	$-ETIMEDOUT, %ecx
+	cmpl	$-ETIMEDOUT, %esi
 	jne	2b
 
-18:	movl	$ETIMEDOUT, %ecx
+18:	movl	$ETIMEDOUT, %edx
 	jmp	9f
 
 
-5:	xorl	%ecx, %ecx
+5:	xorl	%edx, %edx
 	movl	%gs:TID, %eax
 	movl	%eax, WRITER(%ebp)
 9:	LOCK
@@ -145,7 +145,7 @@ pthread_rwlock_timedwrlock:
 #endif
 	jne	6f
 
-7:	movl	%ecx, %eax
+7:	movl	%edx, %eax
 
 	addl	$8, %esp
 	popl	%ebp
@@ -156,16 +156,17 @@ pthread_rwlock_timedwrlock:
 
 1:
 #if MUTEX == 0
-	movl	%ebp, %ecx
+	movl	%ebp, %edx
 #else
-	leal	MUTEX(%ebp), %ecx
+	leal	MUTEX(%ebp), %edx
 #endif
-	call	__lll_mutex_lock_wait
+	movl	PSHARED(%ebp), %ecx
+	call	__lll_lock_wait
 	jmp	2b
 
 14:	cmpl	%gs:TID, %eax
 	jne	3b
-20:	movl	$EDEADLK, %ecx
+20:	movl	$EDEADLK, %edx
 	jmp	9b
 
 6:
@@ -174,12 +175,13 @@ pthread_rwlock_timedwrlock:
 #else
 	leal	MUTEX(%ebp), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+	movl	PSHARED(%ebp), %ecx
+	call	__lll_unlock_wake
 	jmp	7b
 
 	/* Overflow.  */
 4:	subl	$1, WRITERS_QUEUED(%ebp)
-	movl	$EAGAIN, %ecx
+	movl	$EAGAIN, %edx
 	jmp	9b
 
 10:
@@ -188,21 +190,23 @@ pthread_rwlock_timedwrlock:
 #else
 	leal	MUTEX(%ebp), %eax
 #endif
-	call	__lll_mutex_unlock_wake
+	movl	PSHARED(%ebp), %ecx
+	call	__lll_unlock_wake
 	jmp	11b
 
 12:
 #if MUTEX == 0
-	movl	%ebp, %ecx
+	movl	%ebp, %edx
 #else
-	leal	MUTEX(%ebp), %ecx
+	leal	MUTEX(%ebp), %edx
 #endif
-	call	__lll_mutex_lock_wait
+	movl	PSHARED(%ebp), %ecx
+	call	__lll_lock_wait
 	jmp	13b
 
-16:	movl	$-ETIMEDOUT, %ecx
+16:	movl	$-ETIMEDOUT, %esi
 	jmp	17b
 
-19:	movl	$EINVAL, %ecx
+19:	movl	$EINVAL, %edx
 	jmp	9b
 	.size	pthread_rwlock_timedwrlock,.-pthread_rwlock_timedwrlock

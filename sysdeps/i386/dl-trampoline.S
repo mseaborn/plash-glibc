@@ -37,10 +37,10 @@ _dl_runtime_resolve:
 	call _dl_fixup		# Call resolver.
 	popl %edx		# Get register content back.
 	cfi_adjust_cfa_offset (-4)
-	popl %ecx
-	cfi_adjust_cfa_offset (-4)
-	xchgl %eax, (%esp)	# Get %eax contents end store function address.
-	ret $8			# Jump to function address.
+	movl (%esp), %ecx
+	movl %eax, (%esp)	# Store the function address.
+	movl 4(%esp), %eax
+	ret $12			# Jump to function address.
 	cfi_endproc
 	.size _dl_runtime_resolve, .-_dl_runtime_resolve
 
@@ -83,10 +83,10 @@ _dl_runtime_profile:
 	cfi_adjust_cfa_offset (-4)
 	popl %edx		# Get register content back.
 	cfi_adjust_cfa_offset (-4)
-	popl %ecx
-	cfi_adjust_cfa_offset (-4)
-	xchgl %eax, (%esp)	# Get %eax contents end store function address.
-	ret $16			# Jump to function address.
+	movl (%esp), %ecx
+	movl %eax, (%esp)	# Store the function address.
+	movl 4(%esp), %eax
+	ret $20			# Jump to function address.
 
 	/*
 	    +32     return address
@@ -111,18 +111,20 @@ _dl_runtime_profile:
 	cfi_rel_offset (esi, 0)
 	leal 44(%esp), %esi
 	movl %ebx, %ecx
+	orl $4, %ebx		# Increase frame size if necessary to align
+				# stack for the function call
+	andl $~3, %ebx
 	movl %esp, %edi
 	subl %ebx, %edi
-	andl $0xfffffff0, %edi	# Align stack
 	movl %esp, %ebx
 	cfi_def_cfa_register (ebx)
 	movl %edi, %esp
 	shrl $2, %ecx
 	rep
 	movsl
-	movl (%edi), %esi
+	movl (%ebx), %esi
 	cfi_restore (esi)
-	movl 4(%edi), %edi
+	movl 4(%ebx), %edi
 	cfi_restore (edi)
 	/*
 	   %ebx+40  return address

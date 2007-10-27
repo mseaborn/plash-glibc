@@ -209,11 +209,6 @@ vfprintf (FILE *s, const CHAR_T *format, va_list ap)
   CHAR_T *workstart = NULL;
   CHAR_T *workend;
 
-  /* State for restartable multibyte character handling functions.  */
-#ifndef COMPILE_WPRINTF
-  mbstate_t mbstate;
-#endif
-
   /* We have to save the original argument pointer.  */
   va_list ap_save;
 
@@ -1294,11 +1289,8 @@ vfprintf (FILE *s, const CHAR_T *format, va_list ap)
   /* Find the first format specifier.  */
   f = lead_str_end = __find_specwc ((const UCHAR_T *) format);
 #else
-  /* Put state for processing format string in initial state.  */
-  memset (&mbstate, '\0', sizeof (mbstate_t));
-
   /* Find the first format specifier.  */
-  f = lead_str_end = __find_specmb (format, &mbstate);
+  f = lead_str_end = __find_specmb ((const UCHAR_T *) format);
 #endif
 
   /* Lock stream.  */
@@ -1591,7 +1583,7 @@ vfprintf (FILE *s, const CHAR_T *format, va_list ap)
 #ifdef COMPILE_WPRINTF
       f = __find_specwc ((end_of_spec = ++f));
 #else
-      f = __find_specmb ((end_of_spec = ++f), &mbstate);
+      f = __find_specmb ((end_of_spec = ++f));
 #endif
 
       /* Write the following constant string.  */
@@ -1627,6 +1619,8 @@ do_positional:
     /* Just a counter.  */
     size_t cnt;
 
+    free (workstart);
+    workstart = NULL;
 
     if (grouping == (const char *) -1)
       {
@@ -1672,8 +1666,7 @@ do_positional:
 #ifdef COMPILE_WPRINTF
 	nargs += __parse_one_specwc (f, nargs, &specs[nspecs], &max_ref_arg);
 #else
-	nargs += __parse_one_specmb (f, nargs, &specs[nspecs], &max_ref_arg,
-				     &mbstate);
+	nargs += __parse_one_specmb (f, nargs, &specs[nspecs], &max_ref_arg);
 #endif
       }
 
@@ -1801,7 +1794,9 @@ do_positional:
 	int use_outdigits = specs[nspecs_done].info.i18n;
 	char pad = specs[nspecs_done].info.pad;
 	CHAR_T spec = specs[nspecs_done].info.spec;
-	CHAR_T *workstart = NULL;
+
+	workstart = NULL;
+	workend = &work_buffer[sizeof (work_buffer) / sizeof (CHAR_T)];
 
 	/* Fill in last information.  */
 	if (specs[nspecs_done].width_arg != -1)
@@ -1897,8 +1892,7 @@ do_positional:
 	    break;
 	  }
 
-	if (__builtin_expect (workstart != NULL, 0))
-	  free (workstart);
+	free (workstart);
 	workstart = NULL;
 
 	/* Write the following constant string.  */
@@ -1926,7 +1920,7 @@ printf_unknown (FILE *s, const struct printf_info *info,
 
 {
   int done = 0;
-  CHAR_T work_buffer[MAX (info->width, info->spec) + 32];
+  CHAR_T work_buffer[MAX (sizeof (info->width), sizeof (info->prec)) * 3];
   CHAR_T *const workend
     = &work_buffer[sizeof (work_buffer) / sizeof (CHAR_T)];
   register CHAR_T *w;

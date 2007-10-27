@@ -1,5 +1,6 @@
 /* O_*, F_*, FD_* bit values for GNU.
-   Copyright (C) 1993,94,96,97,98,99,2000,01,04 Free Software Foundation, Inc.
+   Copyright (C) 1993,1994,1996,1997,1998,1999,2000,2001,2004,2007
+	Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -70,6 +71,7 @@
 #define O_SYNC		O_FSYNC
 #ifdef __USE_GNU
 # define O_NOATIME	0x0800	/* Don't set access time on read (owner).  */
+# define O_CLOEXEC	0x00010000 /* Set FD_CLOEXEC.  */
 #endif
 #ifdef	__USE_MISC
 # define O_SHLOCK	0x00020000 /* Open with shared file lock.  */
@@ -160,6 +162,11 @@
 #define	F_GETLK		7	/* Get record locking info.  */
 #define	F_SETLK		8	/* Set record locking info (non-blocking).  */
 #define	F_SETLKW	9	/* Set record locking info (blocking).  */
+
+#ifdef __USE_GNU
+# define F_DUPFD_CLOEXEC 1030	/* Duplicate, set FD_CLOEXEC on new one.  */
+#endif
+
 
 /* File descriptor flags used with F_GETFD and F_SETFD.  */
 #define	FD_CLOEXEC	1	/* Close on exec.  */

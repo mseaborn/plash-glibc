@@ -65,6 +65,7 @@ cat <<EOF |
   ISO-8859-7
   ISO-8859-8
   ISO-8859-9
+  ISO-8859-9E
   ISO-8859-10
   ISO-8859-11
   ISO-8859-13
@@ -209,6 +210,8 @@ cat <<EOF |
   RK1048
   MIK
   BRF
+  MAC-CENTRALEUROPE
+  KOI8-RU
   #
   # Multibyte encodings come here
   #
