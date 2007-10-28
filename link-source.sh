@@ -65,6 +65,7 @@ empty_files="
 access.c
 chdir.c
 chmod.c
+chown.c
 close.c
 closedir.c
 creat.c
@@ -74,27 +75,22 @@ dup2.c
 faccessat.c
 fchdir.c
 fchmodat.c
+fchownat.c
 fdopendir.c
 fgetxattr.c
 flistxattr.c
 fremovexattr.c
 fsetxattr.c
 futimesat.c
+fxstatat.c
+fxstatat64.c
 getcwd.c
 getdents.c
 getdents64.c
+getdents64.c
 getxattr.c
-i386/chown.c
-i386/fchownat.c
-i386/fxstatat.c
-i386/fxstatat64.c
-i386/getdents64.c
-i386/lchown.c
-i386/lxstat.c
-i386/readdir64.c
-i386/readdir64_r.c
-i386/xstat.c
 lchmod.c
+lchown.c
 lchown.c
 lgetxattr.c
 link.c
@@ -104,6 +100,7 @@ llistxattr.c
 lremovexattr.c
 lsetxattr.c
 lutimes.c
+lxstat.c
 lxstat64.c
 mkdir.c
 mkdirat.c
@@ -116,6 +113,8 @@ openat64.c
 opendir.c
 readdir.c
 readdir64.c
+readdir64.c
+readdir64_r.c
 readdir64_r.c
 readdir_r.c
 readlink.c
@@ -132,17 +131,21 @@ symlink.c
 symlinkat.c
 telldir.c
 truncate.c
+truncate64.c
 unlink.c
 unlinkat.c
 utimes.c
 xmknod.c
 xmknodat.c
+xstat.c
 xstat64.c
 "
 
+overrides_dir=plash/sysdeps/overrides
+rm -rf $overrides_dir
+mkdir -p $overrides_dir
 for file1 in $empty_files; do
-  file=plash/sysdeps/unix/sysv/linux/$file1
-  mkdir -p $(dirname $file)
+  file=$overrides_dir/$file1
   if ! [ -e $file ]; then
     touch $file
   fi
