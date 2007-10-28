@@ -79,7 +79,6 @@ fgetxattr.c
 flistxattr.c
 fremovexattr.c
 fsetxattr.c
-futimes.c
 futimesat.c
 getcwd.c
 getdents.c
