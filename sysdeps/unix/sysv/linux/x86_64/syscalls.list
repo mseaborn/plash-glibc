@@ -20,10 +20,13 @@ semctl		-	semctl		i:iiii	__semctl	semctl
 
 # proper socket implementations:
 accept		-	accept		Ci:iBN	__libc_accept	__accept accept
-bind		-	bind		i:ipi	__bind		bind
-connect		-	connect		Ci:ipi	__libc_connect	__connect_internal __connect connect
+#bind		-	bind		i:ipi	__bind		bind
+bind		-	bind		i:ipi	kernel_bind
+#connect		-	connect		Ci:ipi	__libc_connect	__connect_internal __connect connect
+connect		-	connect		Ci:ipi	kernel_connect
 getpeername	-	getpeername	i:ipp	__getpeername	getpeername
-getsockname	-	getsockname	i:ipp	__getsockname	getsockname
+#getsockname	-	getsockname	i:ipp	__getsockname	getsockname
+getsockname	-	getsockname	i:ipp	kernel_getsockname
 getsockopt	-	getsockopt	i:iiiBN	__getsockopt	getsockopt
 listen		-	listen		i:ii	__listen	listen
 recvfrom	-	recvfrom	Ci:ibniBN	__libc_recvfrom	__recvfrom recvfrom
