@@ -73,7 +73,7 @@ char *__canonicalize_directory_name_internal (__const char *__thisdir,
 
 extern int __dup (int __fd);
 extern int __dup2 (int __fd, int __fd2);
-libc_hidden_proto (__dup2)
+//libc_hidden_proto (__dup2)
 extern int __execve (__const char *__path, char *__const __argv[],
 		     char *__const __envp[]);
 extern long int __pathconf (__const char *__path, int __name);
@@ -119,14 +119,14 @@ extern int __profil (unsigned short int *__sample_buffer, size_t __size,
 extern int __getdtablesize (void);
 extern int __brk (void *__addr);
 extern int __close (int __fd);
-libc_hidden_proto (__close)
+//libc_hidden_proto (__close)
 extern int __libc_close (int __fd);
 extern ssize_t __read (int __fd, void *__buf, size_t __nbytes);
 libc_hidden_proto (__read)
 extern ssize_t __write (int __fd, __const void *__buf, size_t __n);
 libc_hidden_proto (__write)
 extern __pid_t __fork (void);
-libc_hidden_proto (__fork)
+//libc_hidden_proto (__fork)
 extern int __getpagesize (void) __attribute__ ((__const__));
 libc_hidden_proto (__getpagesize)
 extern int __ftruncate (int __fd, __off_t __length);

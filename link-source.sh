@@ -77,10 +77,6 @@ fchdir.c
 fchmodat.c
 fchownat.c
 fdopendir.c
-fgetxattr.c
-flistxattr.c
-fremovexattr.c
-fsetxattr.c
 futimesat.c
 fxstatat.c
 fxstatat64.c
@@ -127,6 +123,7 @@ rmdir.c
 seekdir.c
 setxattr.c
 statfs.c
+statfs64.c
 symlink.c
 symlinkat.c
 telldir.c
