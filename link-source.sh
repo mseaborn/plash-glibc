@@ -132,6 +132,7 @@ truncate64.c
 unlink.c
 unlinkat.c
 utimes.c
+vfork.c
 xmknod.c
 xmknodat.c
 xstat.c
