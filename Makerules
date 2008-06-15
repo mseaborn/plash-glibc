@@ -111,7 +111,7 @@ endif # $(versioning) = yes
 
 # Make sure the subdirectory for object files gets created.
 ifdef objpfx
-ifeq (,$(wildcard $(objpfx).))
+ifneq ($(shell test -e $(objpfx). && echo exists),exists)
 before-compile += $(objpfx).
 $(objpfx).:
 	$(make-target-directory)
