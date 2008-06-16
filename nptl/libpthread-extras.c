@@ -18,6 +18,10 @@
    USA.  */
 
 
+/* Forward some functions from libc.so to libpthread.so. */
+
+#ifdef SHARED
+
 int __libc_open_nocancel(const char *filename, int flags, int mode);
 
 int __open_nocancel(const char *filename, int flags, int mode)
@@ -72,3 +76,5 @@ int __close(int fd)
   return __libc_close(fd);
 }
 weak_alias(__close, close)
+
+#endif
