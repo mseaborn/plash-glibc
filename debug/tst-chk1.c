@@ -632,7 +632,9 @@ do_test (void)
       || n1 != 1 || n2 != 2)
     FAIL ();
 
+  /* These need /proc/self/maps which is not available under Plash. */
   strcpy (buf2 + 2, "%n%s%n");
+#if 0
   /* When the format string is writable and contains %n,
      with -D_FORTIFY_SOURCE=2 it causes __chk_fail.  */
   CHK_FAIL2_START
@@ -644,6 +646,7 @@ do_test (void)
   if (snprintf (buf, 3, buf2, str2, &n1, str2, &n1) != 2)
     FAIL ();
   CHK_FAIL2_END
+#endif
 
   /* But if there is no %n, even writable format string
      should work.  */
@@ -663,13 +666,16 @@ do_test (void)
       || n1 != 7 || n2 != 14)
     FAIL ();
 
+  /* This needs /proc/self/maps which is not available under Plash. */
   strcpy (buf2 + 2, "%n%s%n");
+#if 0
   /* When the format string is writable and contains %n,
      with -D_FORTIFY_SOURCE=2 it causes __chk_fail.  */
   CHK_FAIL2_START
   if (printf (buf2, str4, &n1, str5, &n1) != 14)
     FAIL ();
   CHK_FAIL2_END
+#endif
 
   /* But if there is no %n, even writable format string
      should work.  */
@@ -691,13 +697,16 @@ do_test (void)
       || n1 != 7 || n2 != 14)
     FAIL ();
 
+  /* This needs /proc/self/maps which is not available under Plash. */
   strcpy (buf2 + 2, "%n%s%n");
+#if 0
   /* When the format string is writable and contains %n,
      with -D_FORTIFY_SOURCE=2 it causes __chk_fail.  */
   CHK_FAIL2_START
   if (fprintf (fp, buf2, str4, &n1, str5, &n1) != 14)
     FAIL ();
   CHK_FAIL2_END
+#endif
 
   /* But if there is no %n, even writable format string
      should work.  */
