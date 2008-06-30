@@ -58,7 +58,7 @@ main (void)
 
   /* We must remove this entry to assure the `cat' binary does not use
      the perhaps incompatible new shared libraries.  */
-  unsetenv ("LD_LIBRARY_PATH");
+  // unsetenv ("LD_LIBRARY_PATH");
 
   output = popen ("/bin/cat >/tmp/tstpopen.tmp", "w");
   if (output == NULL)
