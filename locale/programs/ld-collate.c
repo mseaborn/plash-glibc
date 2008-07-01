@@ -1,4 +1,4 @@
-/* Copyright (C) 1995-2003, 2005, 2006, 2007 Free Software Foundation, Inc.
+/* Copyright (C) 1995-2003, 2005-2007, 2008 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@gnu.org>, 1995.
 
@@ -2963,10 +2963,8 @@ collate_read (struct linereader *ldfile, struct localedef_t *result,
 		col_elem_free:
 		  if (symbol != NULL)
 		    free ((char *) symbol);
-		  if (arg->val.str.startmb != NULL)
-		    free (arg->val.str.startmb);
-		  if (arg->val.str.startwc != NULL)
-		    free (arg->val.str.startwc);
+		  free (arg->val.str.startmb);
+		  free (arg->val.str.startwc);
 		}
 	      lr_ignore_rest (ldfile, 1);
 	    }
@@ -3112,10 +3110,8 @@ collate_read (struct linereader *ldfile, struct localedef_t *result,
 	      else
 		{
 		col_sym_free:
-		  if (symbol != NULL)
-		    free (symbol);
-		  if (endsymbol != NULL)
-		    free (endsymbol);
+		  free (symbol);
+		  free (endsymbol);
 		}
 	    }
 	  break;
@@ -3199,6 +3195,14 @@ error while adding equivalent collating symbol"));
 	  break;
 
 	case tok_script:
+	  /* Ignore the rest of the line if we don't need the input of
+	     this line.  */
+	  if (ignore_content)
+	    {
+	      lr_ignore_rest (ldfile, 0);
+	      break;
+	    }
+
 	  /* We get told about the scripts we know.  */
 	  arg = lr_token (ldfile, charmap, result, repertoire, verbose);
 	  if (arg->tok != tok_bsymbol)
@@ -4008,6 +4012,8 @@ error while adding equivalent collating symbol"));
 			     arg->val.str.lenmb) == 0
 		    && curdef->str[arg->val.str.lenmb] == '\0')
 		  break;
+		else
+		  curdef = curdef->next;
 
 	      if ((nowtok == tok_ifdef && curdef != NULL)
 		  || (nowtok == tok_ifndef && curdef == NULL))

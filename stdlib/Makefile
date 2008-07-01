@@ -1,4 +1,4 @@
-# Copyright (C) 1991-2006, 2007 Free Software Foundation, Inc.
+# Copyright (C) 1991-2006, 2007, 2008 Free Software Foundation, Inc.
 # This file is part of the GNU C Library.
 
 # The GNU C Library is free software; you can redistribute it and/or
@@ -52,7 +52,7 @@ routines	:=							      \
 	rpmatch strfmon strfmon_l getsubopt xpg_basename fmtmsg		      \
 	strtoimax strtoumax wcstoimax wcstoumax				      \
 	getcontext setcontext makecontext swapcontext
-aux =	grouping groupingwc
+aux =	grouping groupingwc tens_in_limb
 
 # These routines will be omitted from the libc shared object.
 # Instead the static object files will be included in a special archive
@@ -68,7 +68,8 @@ tests		:= tst-strtol tst-strtod testmb testrand testsort testdiv   \
 		   tst-limits tst-rand48 bug-strtod tst-setcontext	    \
 		   test-a64l tst-qsort tst-system testmb2 bug-strtod2	    \
 		   tst-atof1 tst-atof2 tst-strtod2 tst-strtod3 tst-rand48-2 \
-		   tst-makecontext tst-strtod4 tst-strtod5 tst-qsort2
+		   tst-makecontext tst-strtod4 tst-strtod5 tst-qsort2	    \
+		   tst-makecontext2 tst-strtod6
 
 include ../Makeconfig
 
@@ -106,6 +107,7 @@ endif
 
 CFLAGS-tst-bsearch.c = $(stack-align-test-flags)
 CFLAGS-tst-qsort.c = $(stack-align-test-flags)
+CFLAGS-tst-makecontext2.c = $(stack-align-test-flags)
 
 include ../Rules
 

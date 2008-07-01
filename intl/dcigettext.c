@@ -1,5 +1,6 @@
 /* Implementation of the internal dcigettext function.
-   Copyright (C) 1995-2005, 2006, 2007 Free Software Foundation, Inc.
+   Copyright (C) 1995-2005, 2006, 2007, 2008
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -203,7 +204,12 @@ struct known_translation_t
   size_t translation_length;
 
   /* Pointer to the string in question.  */
-  char msgid[ZERO];
+  union
+    {
+      char appended[ZERO];  /* used if domain != NULL */
+      const char *ptr;      /* used if domain == NULL */
+    }
+  msgid;
 };
 
 /* Root of the search tree with known translations.  We can use this
@@ -231,7 +237,8 @@ transcmp (p1, p2)
   s1 = (const struct known_translation_t *) p1;
   s2 = (const struct known_translation_t *) p2;
 
-  result = strcmp (s1->msgid, s2->msgid);
+  result = strcmp (s1->domain != NULL ? s1->msgid.appended : s1->msgid.ptr,
+		   s2->domain != NULL ? s2->msgid.appended : s2->msgid.ptr);
   if (result == 0)
     {
       result = strcmp (s1->domainname, s2->domainname);
@@ -422,9 +429,8 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
   size_t retlen;
   int saved_errno;
 #if defined HAVE_TSEARCH || defined _LIBC
-  struct known_translation_t *search;
+  struct known_translation_t search;
   struct known_translation_t **foundp = NULL;
-  size_t msgid_len;
 # ifdef HAVE_PER_THREAD_LOCALE
   const char *localename;
 # endif
@@ -444,6 +450,11 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
 	    : n == 1 ? (char *) msgid1 : (char *) msgid2);
 #endif
 
+#ifdef _LIBC
+  __libc_rwlock_define (extern, __libc_setlocale_lock attribute_hidden)
+  __libc_rwlock_rdlock (__libc_setlocale_lock);
+#endif
+
   __libc_rwlock_rdlock (_nl_state_lock);
 
   /* If DOMAINNAME is NULL, we are interested in the default domain.  If
@@ -453,20 +464,17 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
     domainname = _nl_current_default_domain;
 
 #if defined HAVE_TSEARCH || defined _LIBC
-  msgid_len = strlen (msgid1) + 1;
-
   /* Try to find the translation among those which we found at
      some time.  */
-  search = (struct known_translation_t *)
-	   alloca (offsetof (struct known_translation_t, msgid) + msgid_len);
-  memcpy (search->msgid, msgid1, msgid_len);
-  search->domainname = domainname;
-  search->category = category;
+  search.domain = NULL;
+  search.msgid.ptr = msgid1;
+  search.domainname = domainname;
+  search.category = category;
 # ifdef HAVE_PER_THREAD_LOCALE
 #  ifdef _LIBC
-  localename = __current_locale_name (category);
+  localename = strdupa (__current_locale_name (category));
 #  endif
-  search->localename = localename;
+  search.localename = localename;
 # endif
 
   /* Since tfind/tsearch manage a balanced tree, concurrent tfind and
@@ -474,11 +482,10 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
   __libc_rwlock_define_initialized (static, tree_lock);
   __libc_rwlock_rdlock (tree_lock);
 
-  foundp = (struct known_translation_t **) tfind (search, &root, transcmp);
+  foundp = (struct known_translation_t **) tfind (&search, &root, transcmp);
 
   __libc_rwlock_unlock (tree_lock);
 
-  freea (search);
   if (foundp != NULL && (*foundp)->counter == _nl_msg_cat_cntr)
     {
       /* Now deal with plural.  */
@@ -488,6 +495,9 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
       else
 	retval = (char *) (*foundp)->translation;
 
+# ifdef _LIBC
+      __libc_rwlock_unlock (__libc_setlocale_lock);
+# endif
       __libc_rwlock_unlock (_nl_state_lock);
       return retval;
     }
@@ -547,6 +557,7 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
 	  /* We cannot get the current working directory.  Don't signal an
 	     error but simply return the default string.  */
 	  FREE_BLOCKS (block_list);
+	  __libc_rwlock_unlock (__libc_setlocale_lock);
 	  __libc_rwlock_unlock (_nl_state_lock);
 	  __set_errno (saved_errno);
 	  return (plural == 0
@@ -613,6 +624,7 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
 	{
 	no_translation:
 	  FREE_BLOCKS (block_list);
+	  __libc_rwlock_unlock (__libc_setlocale_lock);
 	  __libc_rwlock_unlock (_nl_state_lock);
 	  __set_errno (saved_errno);
 	  return (plural == 0
@@ -662,9 +674,11 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
 	      if (foundp == NULL)
 		{
 		  /* Create a new entry and add it to the search tree.  */
+		  size_t msgid_len;
 		  size_t size;
 		  struct known_translation_t *newp;
 
+		  msgid_len = strlen (msgid1) + 1;
 		  size = offsetof (struct known_translation_t, msgid)
 			 + msgid_len + domainname_len + 1;
 # ifdef HAVE_PER_THREAD_LOCALE
@@ -678,7 +692,8 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
 		      char *new_localename;
 # endif
 
-		      new_domainname = mempcpy (newp->msgid, msgid1, msgid_len);
+		      new_domainname =
+			mempcpy (newp->msgid.appended, msgid1, msgid_len);
 		      memcpy (new_domainname, domainname, domainname_len + 1);
 # ifdef HAVE_PER_THREAD_LOCALE
 		      new_localename = new_domainname + domainname_len + 1;
@@ -723,6 +738,7 @@ DCIGETTEXT (domainname, msgid1, msgid2, plural, n, category)
 	      if (plural)
 		retval = plural_lookup (domain, n, retval, retlen);
 
+	      __libc_rwlock_unlock (__libc_setlocale_lock);
 	      __libc_rwlock_unlock (_nl_state_lock);
 	      return retval;
 	    }
@@ -875,6 +891,7 @@ _nl_find_msg (domain_file, domainbinding, msgid, convert, lengthp)
 	{
 	  /* We have to allocate a new conversions table.  */
 	  __libc_rwlock_wrlock (domain->conversions_lock);
+	  nconversions = domain->nconversions;
 
 	  /* Maybe in the meantime somebody added the translation.
 	     Recheck.  */
@@ -1029,6 +1046,7 @@ _nl_find_msg (domain_file, domainbinding, msgid, convert, lengthp)
 # endif
 	  )
 	{
+	  __libc_lock_define_initialized (static, lock)
 	  /* We are supposed to do a conversion.  First allocate an
 	     appropriate table with the same structure as the table
 	     of translations in the file, where we can put the pointers
@@ -1038,13 +1056,21 @@ _nl_find_msg (domain_file, domainbinding, msgid, convert, lengthp)
 	     handle this case by converting RESULTLEN bytes, including
 	     NULs.  */
 
-	  if (convd->conv_tab == NULL
-	      && ((convd->conv_tab =
-		    (char **) calloc (nstrings + domain->n_sysdep_strings,
-				      sizeof (char *)))
-		  == NULL))
-	    /* Mark that we didn't succeed allocating a table.  */
-	    convd->conv_tab = (char **) -1;
+	  if (__builtin_expect (convd->conv_tab == NULL, 0))
+	    {
+	      __libc_lock_lock (lock);
+	      if (convd->conv_tab == NULL)
+		{
+		  convd->conv_tab
+		    = calloc (nstrings + domain->n_sysdep_strings,
+			      sizeof (char *));
+		  if (convd->conv_tab != NULL)
+		    goto not_translated_yet;
+		  /* Mark that we didn't succeed allocating a table.  */
+		  convd->conv_tab = (char **) -1;
+		}
+	      __libc_lock_unlock (lock);
+	    }
 
 	  if (__builtin_expect (convd->conv_tab == (char **) -1, 0))
 	    /* Nothing we can do, no more memory.  We cannot use the
@@ -1053,12 +1079,14 @@ _nl_find_msg (domain_file, domainbinding, msgid, convert, lengthp)
 
 	  if (convd->conv_tab[act] == NULL)
 	    {
+	      __libc_lock_lock (lock);
+	    not_translated_yet:;
+
 	      /* We haven't used this string so far, so it is not
 		 translated yet.  Do this now.  */
 	      /* We use a bit more efficient memory handling.
 		 We allocate always larger blocks which get used over
 		 time.  This is faster than many small allocations.   */
-	      __libc_lock_define_initialized (static, lock)
 # define INITIAL_BLOCK_SIZE	4080
 	      static unsigned char *freemem;
 	      static size_t freemem_size;
@@ -1069,8 +1097,6 @@ _nl_find_msg (domain_file, domainbinding, msgid, convert, lengthp)
 # ifndef _LIBC
 	      transmem_block_t *transmem_list = NULL;
 # endif
-
-	      __libc_lock_lock (lock);
 
 	      inbuf = (const unsigned char *) result;
 	      outbuf = freemem + sizeof (size_t);

@@ -1,5 +1,5 @@
 /* Thread-local storage handling in the ELF dynamic linker.  Generic version.
-   Copyright (C) 2002,2003,2004,2005,2006 Free Software Foundation, Inc.
+   Copyright (C) 2002,2003,2004,2005,2006,2008 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -413,7 +413,8 @@ _dl_allocate_tls_init (void *result)
 	     not be the generation counter.  */
 	  maxgen = MAX (maxgen, listp->slotinfo[cnt].gen);
 
-	  if (map->l_tls_offset == NO_TLS_OFFSET)
+	  if (map->l_tls_offset == NO_TLS_OFFSET
+	      || map->l_tls_offset == FORCED_DYNAMIC_TLS_OFFSET)
 	    {
 	      /* For dynamically loaded modules we simply store
 		 the value indicating deferred allocation.  */
@@ -702,6 +703,7 @@ __tls_get_addr (GET_ADDR_ARGS)
   if (__builtin_expect (dtv[0].counter != GL(dl_tls_generation), 0))
     the_map = _dl_update_slotinfo (GET_ADDR_MODULE);
 
+ retry:
   p = dtv[GET_ADDR_MODULE].pointer.val;
 
   if (__builtin_expect (p == TLS_DTV_UNALLOCATED, 0))
@@ -722,6 +724,28 @@ __tls_get_addr (GET_ADDR_ARGS)
 	  the_map = listp->slotinfo[idx].map;
 	}
 
+      /* Make sure that, if a dlopen running in parallel forces the
+	 variable into static storage, we'll wait until the address in
+	 the static TLS block is set up, and use that.  If we're
+	 undecided yet, make sure we make the decision holding the
+	 lock as well.  */
+      if (__builtin_expect (the_map->l_tls_offset
+			    != FORCED_DYNAMIC_TLS_OFFSET, 0))
+	{
+	  __rtld_lock_lock_recursive (GL(dl_load_lock));
+	  if (__builtin_expect (the_map->l_tls_offset == NO_TLS_OFFSET, 1))
+	    {
+	      the_map->l_tls_offset = FORCED_DYNAMIC_TLS_OFFSET;
+	      __rtld_lock_unlock_recursive (GL(dl_load_lock));
+	    }
+	  else
+	    {
+	      __rtld_lock_unlock_recursive (GL(dl_load_lock));
+	      if (__builtin_expect (the_map->l_tls_offset
+				    != FORCED_DYNAMIC_TLS_OFFSET, 1))
+		goto retry;
+	    }
+	}
       p = dtv[GET_ADDR_MODULE].pointer.val = allocate_and_init (the_map);
       dtv[GET_ADDR_MODULE].pointer.is_static = false;
     }
@@ -734,7 +758,6 @@ __tls_get_addr (GET_ADDR_ARGS)
 /* Look up the module's TLS block as for __tls_get_addr,
    but never touch anything.  Return null if it's not allocated yet.  */
 void *
-internal_function
 _dl_tls_get_addr_soft (struct link_map *l)
 {
   if (__builtin_expect (l->l_tls_modid == 0, 0))
