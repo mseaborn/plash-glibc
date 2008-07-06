@@ -487,11 +487,24 @@ check_float_internal (const char *test_name, FLOAT computed, FLOAT expected,
   else
     {
       diff = FUNC(fabs) (computed - expected);
-      /* ilogb (0) isn't allowed.  */
-      if (expected == 0.0)
-	ulp = diff / FUNC(ldexp) (1.0, - MANT_DIG);
-      else
-	ulp = diff / FUNC(ldexp) (1.0, FUNC(ilogb) (expected) - MANT_DIG);
+      switch (fpclassify (expected))
+	{
+	case FP_ZERO:
+	  /* ilogb (0) isn't allowed. */
+	  ulp = diff / FUNC(ldexp) (1.0, - MANT_DIG);
+	  break;
+	case FP_NORMAL:
+	  ulp = diff / FUNC(ldexp) (1.0, FUNC(ilogb) (expected) - MANT_DIG);
+	  break;
+	case FP_SUBNORMAL:
+	  ulp = (FUNC(ldexp) (diff, MANT_DIG)
+		 / FUNC(ldexp) (1.0, FUNC(ilogb) (expected)));
+	  break;
+	default:
+	  /* It should never happen. */
+	  abort ();
+	  break;
+	}
       set_max_error (ulp, curr_max_error);
       print_diff = 1;
       if ((exceptions & IGNORE_ZERO_INF_SIGN) == 0
@@ -4287,6 +4300,17 @@ lround_test (void)
 # endif
   TEST_f_l (lround, 2097152.5, 2097153);
   TEST_f_l (lround, -2097152.5, -2097153);
+  /* nextafter(0.5,-1)  */
+  TEST_f_l (lround, 0x1.fffffffffffffp-2, 0);
+  /* nextafter(-0.5,1)  */
+  TEST_f_l (lround, -0x1.fffffffffffffp-2, 0);
+#else
+  /* nextafter(0.5,-1)  */
+  TEST_f_l (lround, 0x1.fffffp-2, 0);
+  /* nextafter(-0.5,1)  */
+  TEST_f_l (lround, -0x1.fffffp-2, 0);
+  TEST_f_l (lround, 0x1.fffffep+23, 16777215);
+  TEST_f_l (lround, -0x1.fffffep+23, -16777215);
 #endif
   END (lround);
 }
@@ -4346,7 +4370,39 @@ llround_test (void)
   TEST_f_L (llround, 4294967295.5, 4294967296LL);
   /* 0x200000000 */
   TEST_f_L (llround, 8589934591.5, 8589934592LL);
+
+  /* nextafter(0.5,-1)  */
+  TEST_f_L (llround, 0x1.fffffffffffffp-2, 0);
+  /* nextafter(-0.5,1)  */
+  TEST_f_L (llround, -0x1.fffffffffffffp-2, 0);
+  /* On PowerPC an exponent of '52' is the largest incrementally
+   * representable sequence of whole-numbers in the 'double' range.  We test
+   * lround to make sure that a guard bit set during the lround operation
+   * hasn't forced an erroneous shift giving us an incorrect result.  The odd
+   * numbers between +-(2^52+1 and 2^53-1) are affected since they have the
+   * rightmost bit set.  */
+  /* +-(2^52+1)  */
+  TEST_f_L (llround, 0x1.0000000000001p+52,4503599627370497LL);
+  TEST_f_L (llround, -0x1.0000000000001p+52,-4503599627370497LL);
+  /* +-(2^53-1): Input is the last (positive and negative) incrementally
+   * representable whole-number in the 'double' range that might round
+   * erroneously.  */
+  TEST_f_L (llround, 0x1.fffffffffffffp+52, 9007199254740991LL);
+  TEST_f_L (llround, -0x1.fffffffffffffp+52, -9007199254740991LL);
+#else
+  /* nextafter(0.5,-1)  */
+  TEST_f_L (llround, 0x1.fffffep-2, 0);
+  /* nextafter(-0.5,1)  */
+  TEST_f_L (llround, -0x1.fffffep-2, 0);
+  /* As above, on PowerPC an exponent of '23' is the largest incrementally
+   * representable sequence of whole-numbers in the 'float' range.
+   * Likewise, numbers between +-(2^23+1 and 2^24-1) are affected.  */
+  TEST_f_L (llround, 0x1.000002p+23,8388609);
+  TEST_f_L (llround, -0x1.000002p+23,-8388609);
+  TEST_f_L (llround, 0x1.fffffep+23, 16777215);
+  TEST_f_L (llround, -0x1.fffffep+23, -16777215);
 #endif
+
 
 #ifdef TEST_LDOUBLE
   /* The input can only be represented in long double.  */
@@ -4467,6 +4523,11 @@ nearbyint_test (void)
   TEST_f_f (nearbyint, 1.5, 2.0);
   TEST_f_f (nearbyint, -0.5, minus_zero);
   TEST_f_f (nearbyint, -1.5, -2.0);
+
+  TEST_f_f (nearbyint, 262144.75, 262145.0);
+  TEST_f_f (nearbyint, 262142.75, 262143.0);
+  TEST_f_f (nearbyint, 524286.75, 524287.0);
+  TEST_f_f (nearbyint, 524288.75, 524289.0);
 
   END (nearbyint);
 }
@@ -4839,6 +4900,10 @@ rint_test (void)
   TEST_f_f (rint, -0.1, -0.0);
   TEST_f_f (rint, -0.25, -0.0);
   TEST_f_f (rint, -0.625, -1.0);
+  TEST_f_f (rint, 262144.75, 262145.0);
+  TEST_f_f (rint, 262142.75, 262143.0);
+  TEST_f_f (rint, 524286.75, 524287.0);
+  TEST_f_f (rint, 524288.75, 524289.0);
 #ifdef TEST_LDOUBLE
   /* The result can only be represented in long double.  */
   TEST_f_f (rint, 4503599627370495.5L, 4503599627370496.0L);

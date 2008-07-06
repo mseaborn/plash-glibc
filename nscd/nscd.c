@@ -1,4 +1,4 @@
-/* Copyright (c) 1998-2006, 2007 Free Software Foundation, Inc.
+/* Copyright (c) 1998-2006, 2007, 2008 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Thorsten Kukuk <kukuk@suse.de>, 1998.
 
@@ -100,7 +100,7 @@ static const struct argp_option options[] =
     N_("Do not fork and display messages on the current tty") },
   { "nthreads", 't', N_("NUMBER"), 0, N_("Start NUMBER threads") },
   { "shutdown", 'K', NULL, 0, N_("Shut the server down") },
-  { "statistic", 'g', NULL, 0, N_("Print current configuration statistic") },
+  { "statistics", 'g', NULL, 0, N_("Print current configuration statistics") },
   { "invalidate", 'i', N_("TABLE"), 0,
     N_("Invalidate the specified cache") },
   { "secure", 'S', N_("TABLE,yes"), OPTION_HIDDEN,
@@ -407,7 +407,7 @@ print_version (FILE *stream, struct argp_state *state)
 Copyright (C) %s Free Software Foundation, Inc.\n\
 This is free software; see the source for copying conditions.  There is NO\n\
 warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\
-"), "2007");
+"), "2008");
   fprintf (stream, gettext ("Written by %s.\n"),
 	   "Thorsten Kukuk and Ulrich Drepper");
 }
