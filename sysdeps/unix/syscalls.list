@@ -15,13 +15,13 @@ fcntl		-	fcntl		Ci:iiF	__libc_fcntl	__fcntl __fcntl_internal fcntl
 fstatfs		-	fstatfs		i:ip	__fstatfs	fstatfs
 fsync		-	fsync		Ci:i	__libc_fsync	fsync
 getdomain	-	getdomainname	i:si	getdomainname
-getgid		-	getgid		Ei:	__getgid	getgid
+kernel_getgid		-	getgid		Ei:	kernel_getgid
 getgroups	-	getgroups	i:ip	__getgroups	getgroups
 getitimer	-	getitimer	i:ip	__getitimer	getitimer
 getpid		-	getpid		Ei:	__getpid	getpid
 getpriority	-	getpriority	i:ii	getpriority
 getrlimit	-	getrlimit	i:ip	__getrlimit	getrlimit
-getuid		-	getuid		Ei:	__getuid	getuid
+kernel_getuid		-	getuid		Ei:	kernel_getuid
 ioctl		-	ioctl		i:iiI	__ioctl		ioctl
 kill		-	kill		i:ii	__kill		kill
 #link		-	link		i:ss	__link		link
@@ -39,16 +39,16 @@ reboot		-	reboot		i:i	reboot
 #rmdir		-	rmdir		i:s	__rmdir		rmdir
 select		-	select		Ci:iPPPP	__select	__libc_select select
 setdomain	-	setdomainname	i:si	setdomainname
-setegid		-	setegid		i:i	__setegid	setegid
-seteuid		-	seteuid		i:i	__seteuid	seteuid
-setgid		-	setgid		i:i	__setgid	setgid
+#setegid		-	setegid		i:i	__setegid	setegid
+#seteuid		-	seteuid		i:i	__seteuid	seteuid
+#setgid		-	setgid		i:i	__setgid	setgid
 setgroups	-	setgroups	i:ip	setgroups
 setitimer	-	setitimer	i:ipp	__setitimer	setitimer
 setpriority	-	setpriority	i:iii	setpriority
 setrlimit	-	setrlimit	i:ip	__setrlimit setrlimit
 setsid		-	setsid		i:	__setsid	setsid
 settimeofday	-	settimeofday	i:PP	__settimeofday	settimeofday
-setuid		-	setuid		i:i	__setuid	setuid
+#setuid		-	setuid		i:i	__setuid	setuid
 sigsuspend	-	sigsuspend	Ci:p	sigsuspend
 sstk		-	sstk		b:i	sstk
 statfs		-	statfs		i:sp	__statfs	statfs

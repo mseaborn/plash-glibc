@@ -137,6 +137,18 @@ xmknod.c
 xmknodat.c
 xstat.c
 xstat64.c
+getuid.c
+getgid.c
+geteuid.c
+getegid.c
+setuid.c
+setgid.c
+seteuid.c
+setegid.c
+setreuid.c
+setregid.c
+setresuid.c
+setresgid.c
 "
 
 overrides_dir=plash/sysdeps/overrides

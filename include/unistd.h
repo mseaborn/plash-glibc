@@ -12,8 +12,8 @@ libc_hidden_proto (getpid)
 libc_hidden_proto (getsid)
 libc_hidden_proto (getdomainname)
 libc_hidden_proto (getlogin_r)
-libc_hidden_proto (seteuid)
-libc_hidden_proto (setegid)
+//libc_hidden_proto (seteuid)
+//libc_hidden_proto (setegid)
 libc_hidden_proto (tcgetpgrp)
 //libc_hidden_proto (readlinkat)
 
@@ -101,10 +101,10 @@ extern int __getresuid (__uid_t *__ruid, __uid_t *__euid, __uid_t *__suid);
 extern int __getresgid (__gid_t *__rgid, __gid_t *__egid, __gid_t *__sgid);
 extern int __setresuid (__uid_t __ruid, __uid_t __euid, __uid_t __suid);
 extern int __setresgid (__gid_t __rgid, __gid_t __egid, __gid_t __sgid);
-libc_hidden_proto (__getresuid)
-libc_hidden_proto (__getresgid)
-libc_hidden_proto (__setresuid)
-libc_hidden_proto (__setresgid)
+//libc_hidden_proto (__getresuid)
+//libc_hidden_proto (__getresgid)
+//libc_hidden_proto (__setresuid)
+//libc_hidden_proto (__setresgid)
 extern __pid_t __vfork (void);
 libc_hidden_proto (__vfork)
 extern int __ttyname_r (int __fd, char *__buf, size_t __buflen);
