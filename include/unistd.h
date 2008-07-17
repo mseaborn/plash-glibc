@@ -101,8 +101,8 @@ extern int __getresuid (__uid_t *__ruid, __uid_t *__euid, __uid_t *__suid);
 extern int __getresgid (__gid_t *__rgid, __gid_t *__egid, __gid_t *__sgid);
 extern int __setresuid (__uid_t __ruid, __uid_t __euid, __uid_t __suid);
 extern int __setresgid (__gid_t __rgid, __gid_t __egid, __gid_t __sgid);
-//libc_hidden_proto (__getresuid)
-//libc_hidden_proto (__getresgid)
+libc_hidden_proto (__getresuid)
+libc_hidden_proto (__getresgid)
 //libc_hidden_proto (__setresuid)
 //libc_hidden_proto (__setresgid)
 extern __pid_t __vfork (void);

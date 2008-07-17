@@ -14,8 +14,8 @@ fdatasync	-	fdatasync	Ci:i	fdatasync
 flock		-	flock		i:ii	__flock		flock
 kernel_fork		-	fork		i:	kernel_fork
 get_kernel_syms	EXTRA	get_kernel_syms	i:p	get_kernel_syms
-kernel_getegid		-	getegid		Ei:	kernel_getegid
-kernel_geteuid		-	geteuid		Ei:	kernel_geteuid
+getegid		-	getegid		Ei:	kernel_getegid
+geteuid		-	geteuid		Ei:	kernel_geteuid
 getpgid		-	getpgid		i:i	__getpgid	getpgid
 getpgrp		-	getpgrp		Ei:	getpgrp
 getpmsg		-	getpmsg		i:ipppp	getpmsg

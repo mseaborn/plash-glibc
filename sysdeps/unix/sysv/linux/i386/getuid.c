@@ -36,7 +36,7 @@ int __libc_missing_32bit_uids attribute_hidden = -1;
 #endif /* __NR_getuid32 */
 
 uid_t
-__getuid (void)
+kernel_getuid (void)
 {
   INTERNAL_SYSCALL_DECL (err);
 #if __ASSUME_32BITUIDS > 0
@@ -62,4 +62,6 @@ __getuid (void)
 #endif
 }
 
+#if 0
 weak_alias (__getuid, getuid)
+#endif
