@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2005, 2006, 2007 Free Software Foundation, Inc.
+/* Copyright (C) 2002, 2003, 2005-2007, 2008 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -17,11 +17,16 @@
    Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
    02111-1307 USA.  */
 
+#include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
 #include "pthreadP.h"
 #include <lowlevellock.h>
 
+static int
+internal_function
+__pthread_mutex_unlock_full (pthread_mutex_t *mutex, int decr)
+     __attribute_noinline__;
 
 int
 internal_function attribute_hidden
@@ -29,30 +34,13 @@ __pthread_mutex_unlock_usercnt (mutex, decr)
      pthread_mutex_t *mutex;
      int decr;
 {
-  int newowner = 0;
+  int type = PTHREAD_MUTEX_TYPE (mutex);
+  if (__builtin_expect (type & ~PTHREAD_MUTEX_KIND_MASK_NP, 0))
+    return __pthread_mutex_unlock_full (mutex, decr);
 
-  switch (__builtin_expect (PTHREAD_MUTEX_TYPE (mutex),
-			    PTHREAD_MUTEX_TIMED_NP))
+  if (__builtin_expect (type, PTHREAD_MUTEX_TIMED_NP)
+      == PTHREAD_MUTEX_TIMED_NP)
     {
-    case PTHREAD_MUTEX_RECURSIVE_NP:
-      /* Recursive mutex.  */
-      if (mutex->__data.__owner != THREAD_GETMEM (THREAD_SELF, tid))
-	return EPERM;
-
-      if (--mutex->__data.__count != 0)
-	/* We still hold the mutex.  */
-	return 0;
-      goto normal;
-
-    case PTHREAD_MUTEX_ERRORCHECK_NP:
-      /* Error checking mutex.  */
-      if (mutex->__data.__owner != THREAD_GETMEM (THREAD_SELF, tid)
-	  || ! lll_islocked (mutex->__data.__lock))
-	return EPERM;
-      /* FALLTHROUGH */
-
-    case PTHREAD_MUTEX_TIMED_NP:
-    case PTHREAD_MUTEX_ADAPTIVE_NP:
       /* Always reset the owner field.  */
     normal:
       mutex->__data.__owner = 0;
@@ -62,8 +50,41 @@ __pthread_mutex_unlock_usercnt (mutex, decr)
 
       /* Unlock.  */
       lll_unlock (mutex->__data.__lock, PTHREAD_MUTEX_PSHARED (mutex));
-      break;
+      return 0;
+    }
+  else if (__builtin_expect (type == PTHREAD_MUTEX_RECURSIVE_NP, 1))
+    {
+      /* Recursive mutex.  */
+      if (mutex->__data.__owner != THREAD_GETMEM (THREAD_SELF, tid))
+	return EPERM;
 
+      if (--mutex->__data.__count != 0)
+	/* We still hold the mutex.  */
+	return 0;
+      goto normal;
+    }
+  else if (__builtin_expect (type == PTHREAD_MUTEX_ADAPTIVE_NP, 1))
+    goto normal;
+  else
+    {
+      /* Error checking mutex.  */
+      assert (type == PTHREAD_MUTEX_ERRORCHECK_NP);
+      if (mutex->__data.__owner != THREAD_GETMEM (THREAD_SELF, tid)
+	  || ! lll_islocked (mutex->__data.__lock))
+	return EPERM;
+      goto normal;
+    }
+}
+
+
+static int
+internal_function
+__pthread_mutex_unlock_full (pthread_mutex_t *mutex, int decr)
+{
+  int newowner = 0;
+
+  switch (PTHREAD_MUTEX_TYPE (mutex))
+    {
     case PTHREAD_MUTEX_ROBUST_RECURSIVE_NP:
       /* Recursive mutex.  */
       if ((mutex->__data.__lock & FUTEX_TID_MASK)
@@ -196,9 +217,13 @@ __pthread_mutex_unlock_usercnt (mutex, decr)
 						   THREAD_GETMEM (THREAD_SELF,
 								  tid)))
 	{
+	  int robust = mutex->__data.__kind & PTHREAD_MUTEX_ROBUST_NORMAL_NP;
+	  int private = (robust
+			 ? PTHREAD_ROBUST_MUTEX_PSHARED (mutex)
+			 : PTHREAD_MUTEX_PSHARED (mutex));
 	  INTERNAL_SYSCALL_DECL (__err);
 	  INTERNAL_SYSCALL (futex, __err, 2, &mutex->__data.__lock,
-			    FUTEX_UNLOCK_PI);
+			    __lll_private_flag (FUTEX_UNLOCK_PI, private));
 	}
 
       THREAD_SETMEM (THREAD_SELF, robust_head.list_op_pending, NULL);

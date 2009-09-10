@@ -1,4 +1,4 @@
-/* Copyright (C) 1998-2007, 2008 Free Software Foundation, Inc.
+/* Copyright (C) 1998-2007, 2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@cygnus.com>, 1998.
 
@@ -33,6 +33,7 @@
 #include <sys/un.h>
 #include <not-cancel.h>
 #include <nis/rpcsvc/nis.h>
+#include <kernel-features.h>
 
 #include "nscd-client.h"
 
@@ -161,7 +162,26 @@ __readvall (int fd, const struct iovec *iov, int iovcnt)
 static int
 open_socket (request_type type, const char *key, size_t keylen)
 {
-  int sock = __socket (PF_UNIX, SOCK_STREAM, 0);
+  int sock;
+
+#ifdef SOCK_CLOEXEC
+# ifndef __ASSUME_SOCK_CLOEXEC
+  if (__have_sock_cloexec >= 0)
+# endif
+    {
+      sock = __socket (PF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+# ifndef __ASSUME_SOCK_CLOEXEC
+      if (__have_sock_cloexec == 0)
+	__have_sock_cloexec = sock != -1 || errno != EINVAL ? 1 : -1;
+# endif
+    }
+#endif
+#ifndef __ASSUME_SOCK_CLOEXEC
+# ifdef SOCK_CLOEXEC
+  if (__have_sock_cloexec < 0)
+# endif
+    sock = __socket (PF_UNIX, SOCK_STREAM, 0);
+#endif
   if (sock < 0)
     return -1;
 
@@ -172,8 +192,13 @@ open_socket (request_type type, const char *key, size_t keylen)
   } reqdata;
   size_t real_sizeof_reqdata = sizeof (request_header) + keylen;
 
-  /* Make socket non-blocking.  */
-  __fcntl (sock, F_SETFL, O_RDWR | O_NONBLOCK);
+#ifndef __ASSUME_SOCK_CLOEXEC
+# ifdef SOCK_NONBLOCK
+  if (__have_sock_cloexec < 0)
+# endif
+    /* Make socket non-blocking.  */
+    __fcntl (sock, F_SETFL, O_RDWR | O_NONBLOCK);
+#endif
 
   struct sockaddr_un sun;
   sun.sun_family = AF_UNIX;
@@ -293,7 +318,7 @@ get_mapping (request_type type, const char *key,
 
   /* This access is well-aligned since BUF is correctly aligned for an
      int and CMSG_DATA preserves this alignment.  */
-  *(int *) CMSG_DATA (cmsg) = -1;
+  memset (CMSG_DATA (cmsg), '\xff', sizeof (int));
 
   msg.msg_controllen = cmsg->cmsg_len;
 
@@ -310,7 +335,8 @@ get_mapping (request_type type, const char *key,
 			    != CMSG_LEN (sizeof (int))), 0))
     goto out_close2;
 
-  mapfd = *(int *) CMSG_DATA (cmsg);
+  int *ip = (void *) CMSG_DATA (cmsg);
+  mapfd = *ip;
 
   if (__builtin_expect (n != keylen && n != keylen + sizeof (mapsize), 0))
     goto out_close;

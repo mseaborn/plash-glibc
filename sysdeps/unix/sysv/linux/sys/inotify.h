@@ -1,4 +1,4 @@
-/* Copyright (C) 2005, 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2005, 2006, 2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -20,6 +20,16 @@
 #define	_SYS_INOTIFY_H	1
 
 #include <stdint.h>
+
+
+/* Flags for the parameter of inotify_init1.  */
+enum
+  {
+    IN_CLOEXEC = 02000000,
+#define IN_CLOEXEC IN_CLOEXEC
+    IN_NONBLOCK = 04000
+#define IN_NONBLOCK IN_NONBLOCK
+  };
 
 
 /* Structure describing an inotify event.  */
@@ -79,13 +89,16 @@ __BEGIN_DECLS
 /* Create and initialize inotify instance.  */
 extern int inotify_init (void) __THROW;
 
+/* Create and initialize inotify instance.  */
+extern int inotify_init1 (int __flags) __THROW;
+
 /* Add watch of object NAME to inotify instance FD.  Notify about
    events specified by MASK.  */
 extern int inotify_add_watch (int __fd, const char *__name, uint32_t __mask)
   __THROW;
 
 /* Remove the watch specified by WD from the inotify instance FD.  */
-extern int inotify_rm_watch (int __fd, uint32_t __wd) __THROW;
+extern int inotify_rm_watch (int __fd, int __wd) __THROW;
 
 __END_DECLS
 

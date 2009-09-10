@@ -1,4 +1,4 @@
-/* Copyright (C) 1996-2002, 2003, 2004, 2007 Free Software Foundation, Inc.
+/* Copyright (C) 1996-2004, 2007, 2008 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@cygnus.com>
    and Paul Janzen <pcj@primenet.com>, 1996.
@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -35,6 +36,7 @@
 
 /* Descriptor for the file and position.  */
 static int file_fd = -1;
+static bool file_writable;
 static off64_t file_offset;
 
 /* Cache for the last read entry.  */
@@ -137,7 +139,6 @@ setutent_file (void)
   if (file_fd < 0)
     {
       const char *file_name;
-      int result;
 
       file_name = TRANSFORM_UTMP_FILE_NAME (__libc_utmp_file_name);
 
@@ -146,14 +147,10 @@ setutent_file (void)
 #else
 # define O_flags O_LARGEFILE
 #endif
-      file_fd = open_not_cancel_2 (file_name, O_RDWR | O_flags);
+      file_writable = false;
+      file_fd = open_not_cancel_2 (file_name, O_RDONLY | O_flags);
       if (file_fd == -1)
-	{
-	  /* Hhm, read-write access did not work.  Try read-only.  */
-	  file_fd = open_not_cancel_2 (file_name, O_RDONLY | O_flags);
-	  if (file_fd == -1)
-	    return 0;
-	}
+	return 0;
 
 #ifndef __ASSUME_O_CLOEXEC
 # ifdef O_CLOEXEC
@@ -161,16 +158,17 @@ setutent_file (void)
 # endif
 	{
 	  /* We have to make sure the file is `closed on exec'.  */
-	  result = fcntl_not_cancel (file_fd, F_GETFD, 0);
+	  int result = fcntl_not_cancel (file_fd, F_GETFD, 0);
 	  if (result >= 0)
 	    {
 # ifdef O_CLOEXEC
 	      if (__have_o_cloexec == 0)
 		__have_o_cloexec = (result & FD_CLOEXEC) ? 1 : -1;
-# endif
 
-	      result = fcntl_not_cancel (file_fd, F_SETFD,
-					 result | FD_CLOEXEC);
+	      if (__have_o_cloexec < 0)
+# endif
+		result = fcntl_not_cancel (file_fd, F_SETFD,
+					   result | FD_CLOEXEC);
 	    }
 
 	  if (result == -1)
@@ -243,12 +241,16 @@ getutent_r_file (struct utmp *buffer, struct utmp **result)
 
 
 static int
-internal_getut_r (const struct utmp *id, struct utmp *buffer)
+internal_getut_r (const struct utmp *id, struct utmp *buffer,
+		  bool *lock_failed)
 {
   int result = -1;
 
   LOCK_FILE (file_fd, F_RDLCK)
-    LOCKING_FAILED ();
+    {
+      *lock_failed = true;
+      LOCKING_FAILED ();
+    }
 
 #if _HAVE_UT_TYPE - 0
   if (id->ut_type == RUN_LVL || id->ut_type == BOOT_TIME
@@ -319,7 +321,10 @@ getutid_r_file (const struct utmp *id, struct utmp *buffer,
       return -1;
     }
 
-  if (internal_getut_r (id, &last_entry) < 0)
+  /* We don't have to distinguish whether we can lock the file or
+     whether there is no entry.  */
+  bool lock_failed = false;
+  if (internal_getut_r (id, &last_entry, &lock_failed) < 0)
     {
       *result = NULL;
       return -1;
@@ -395,6 +400,52 @@ pututline_file (const struct utmp *data)
 
   assert (file_fd >= 0);
 
+  if (! file_writable)
+    {
+      /* We must make the file descriptor writable before going on.  */
+      const char *file_name = TRANSFORM_UTMP_FILE_NAME (__libc_utmp_file_name);
+
+      int new_fd = open_not_cancel_2 (file_name, O_RDWR | O_flags);
+      if (new_fd == -1)
+	return NULL;
+
+#ifndef __ASSUME_O_CLOEXEC
+# ifdef O_CLOEXEC
+      if (__have_o_cloexec <= 0)
+# endif
+	{
+	  /* We have to make sure the file is `closed on exec'.  */
+	  int result = fcntl_not_cancel (file_fd, F_GETFD, 0);
+	  if (result >= 0)
+	    {
+# ifdef O_CLOEXEC
+	      if (__have_o_cloexec == 0)
+		__have_o_cloexec = (result & FD_CLOEXEC) ? 1 : -1;
+
+	      if (__have_o_cloexec < 0)
+# endif
+		result = fcntl_not_cancel (file_fd, F_SETFD,
+					   result | FD_CLOEXEC);
+	    }
+
+	  if (result == -1)
+	    {
+	      close_not_cancel_no_status (file_fd);
+	      return NULL;
+	    }
+	}
+#endif
+
+      if (__lseek64 (new_fd, __lseek64 (file_fd, 0, SEEK_CUR), SEEK_SET) == -1
+	  || __dup2 (new_fd, file_fd) < 0)
+	{
+	  close_not_cancel_no_status (new_fd);
+	  return NULL;
+	}
+      close_not_cancel_no_status (new_fd);
+      file_writable = true;
+    }
+
   /* Find the correct place to insert the data.  */
   if (file_offset > 0
       && (
@@ -409,7 +460,16 @@ pututline_file (const struct utmp *data)
 	  __utmp_equal (&last_entry, data)))
     found = 1;
   else
-    found = internal_getut_r (data, &buffer);
+    {
+      bool lock_failed = false;
+      found = internal_getut_r (data, &buffer, &lock_failed);
+
+      if (__builtin_expect (lock_failed, false))
+	{
+	  __set_errno (EAGAIN);
+	  return NULL;
+	}
+    }
 
   LOCK_FILE (file_fd, F_WRLCK)
     {

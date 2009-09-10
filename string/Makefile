@@ -1,4 +1,4 @@
-# Copyright (C) 1991-2002, 2005, 2006, 2007 Free Software Foundation, Inc.
+# Copyright (C) 1991-2002, 2005-2008, 2009 Free Software Foundation, Inc.
 # This file is part of the GNU C Library.
 
 # The GNU C Library is free software; you can redistribute it and/or
@@ -48,14 +48,15 @@ o-objects.ob	:= memcpy.o memset.o memchr.o
 
 strop-tests	:= memchr memcmp memcpy memmove mempcpy memset memccpy	\
 		   stpcpy stpncpy strcat strchr strcmp strcpy strcspn	\
-		   strlen strncmp strncpy strpbrk strrchr strspn
+		   strlen strncmp strncpy strpbrk strrchr strspn memmem
 tests		:= tester inl-tester noinl-tester testcopy test-ffs	\
 		   tst-strlen stratcliff tst-svc tst-inlcall		\
 		   bug-strncat1 bug-strspn1 bug-strpbrk1 tst-bswap	\
 		   tst-strtok tst-strxfrm bug-strcoll1 tst-strfry	\
 		   bug-strtok1 $(addprefix test-,$(strop-tests))	\
-		   bug-envz1 tst-strxfrm2
-distribute	:= memcopy.h pagecopy.h tst-svc.expect test-string.h
+		   bug-envz1 tst-strxfrm2 tst-endian tst-svc2
+distribute	:= memcopy.h pagecopy.h tst-svc.expect test-string.h	\
+		   str-two-way.h
 
 
 include ../Rules
@@ -78,5 +79,5 @@ tests: $(objpfx)tst-svc.out
 $(objpfx)tst-svc.out: tst-svc.input $(objpfx)tst-svc
 	GCONV_PATH=$(common-objpfx)iconvdata LC_ALL=C \
 	  $(built-program-cmd) < $(word 1,$^) > $@
-	-cmp tst-svc.expect $(objpfx)tst-svc.out
+	@cmp tst-svc.expect $(objpfx)tst-svc.out
 endif

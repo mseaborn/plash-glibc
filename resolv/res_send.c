@@ -95,11 +95,19 @@ static const char rcsid[] = "$BINDId: res_send.c,v 8.38 2000/03/30 20:16:51 vixi
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <kernel-features.h>
 
 #if PACKETSZ > 65536
 #define MAXPACKET       PACKETSZ
 #else
 #define MAXPACKET       65536
+#endif
+
+
+#ifndef __ASSUME_SOCK_CLOEXEC
+static int __have_o_nonblock;
+#else
+# define __have_o_nonblock 0
 #endif
 
 
@@ -176,10 +184,14 @@ evNowTime(struct timespec *res) {
 /* Forward. */
 
 static int		send_vc(res_state, const u_char *, int,
-				u_char **, int *, int *, int, u_char **);
+				const u_char *, int,
+				u_char **, int *, int *, int, u_char **,
+				u_char **, int *, int *);
 static int		send_dg(res_state, const u_char *, int,
+				const u_char *, int,
 				u_char **, int *, int *, int,
-				int *, int *, u_char **);
+				int *, int *, u_char **,
+				u_char **, int *, int *);
 #ifdef DEBUG
 static void		Aerror(const res_state, FILE *, const char *, int,
 			       const struct sockaddr *);
@@ -190,7 +202,6 @@ static int		sock_eq(struct sockaddr_in6 *, struct sockaddr_in6 *);
 /* Reachover. */
 
 static void convaddr4to6(struct sockaddr_in6 *sa);
-void res_pquery(const res_state, const u_char *, int, FILE *);
 
 /* Public. */
 
@@ -334,33 +345,41 @@ libresolv_hidden_def (res_queriesmatch)
 
 int
 __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
-		 u_char *ans, int anssiz, u_char **ansp)
+		 const u_char *buf2, int buflen2,
+		 u_char *ans, int anssiz, u_char **ansp, u_char **ansp2,
+		 int *nansp2, int *resplen2)
 {
-	int gotsomewhere, terrno, try, v_circuit, resplen, ns, n;
+  int gotsomewhere, terrno, try, v_circuit, resplen, ns, n;
 
 	if (statp->nscount == 0) {
 		__set_errno (ESRCH);
 		return (-1);
 	}
 
-	if (anssiz < HFIXEDSZ) {
+	if (anssiz < (buf2 == NULL ? 1 : 2) * HFIXEDSZ) {
 		__set_errno (EINVAL);
 		return (-1);
 	}
 
-	if ((statp->qhook || statp->rhook) && anssiz < MAXPACKET && ansp) {
-		u_char *buf = malloc (MAXPACKET);
-		if (buf == NULL)
-			return (-1);
-		memcpy (buf, ans, HFIXEDSZ);
-		*ansp = buf;
-		ans = buf;
-		anssiz = MAXPACKET;
+#ifdef USE_HOOKS
+	if (__builtin_expect (statp->qhook || statp->rhook, 0)) {
+		if (anssiz < MAXPACKET && ansp) {
+			u_char *buf = malloc (MAXPACKET);
+			if (buf == NULL)
+				return (-1);
+			memcpy (buf, ans, HFIXEDSZ);
+			*ansp = buf;
+			ans = buf;
+			anssiz = MAXPACKET;
+		}
 	}
+#endif
 
 	DprintQ((statp->options & RES_DEBUG) || (statp->pfcode & RES_PRF_QUERY),
 		(stdout, ";; res_send()\n"), buf, buflen);
-	v_circuit = (statp->options & RES_USEVC) || buflen > PACKETSZ;
+	v_circuit = ((statp->options & RES_USEVC)
+		     || buflen > PACKETSZ
+		     || buflen2 > PACKETSZ);
 	gotsomewhere = 0;
 	terrno = ETIMEDOUT;
 
@@ -442,7 +461,7 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 	 * Some resolvers want to even out the load on their nameservers.
 	 * Note that RES_BLAST overrides RES_ROTATE.
 	 */
-	if ((statp->options & RES_ROTATE) != 0 &&
+	if (__builtin_expect ((statp->options & RES_ROTATE) != 0, 0) &&
 	    (statp->options & RES_BLAST) == 0) {
 		struct sockaddr_in6 *ina;
 		unsigned int map;
@@ -479,8 +498,9 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 
 		if (nsap == NULL)
 			goto next_ns;
- same_ns:
-		if (statp->qhook) {
+	    same_ns:
+#ifdef USE_HOOKS
+		if (__builtin_expect (statp->qhook != NULL, 0)) {
 			int done = 0, loops = 0;
 
 			do {
@@ -512,6 +532,7 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 				}
 			} while (!done);
 		}
+#endif
 
 #ifdef DEBUG
 		char tmpbuf[40];
@@ -521,28 +542,33 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 			ns + 1, inet_ntop(AF_INET6, &nsap->sin6_addr,
 					  tmpbuf, sizeof (tmpbuf))));
 
-		if (v_circuit) {
+		if (__builtin_expect (v_circuit, 0)) {
 			/* Use VC; at most one attempt per server. */
 			try = statp->retry;
-			n = send_vc(statp, buf, buflen, &ans, &anssiz, &terrno,
-				    ns, ansp);
+			n = send_vc(statp, buf, buflen, buf2, buflen2,
+				    &ans, &anssiz, &terrno,
+				    ns, ansp, ansp2, nansp2, resplen2);
 			if (n < 0)
 				return (-1);
 			if (n == 0)
 				goto next_ns;
-			resplen = n;
 		} else {
 			/* Use datagrams. */
-			n = send_dg(statp, buf, buflen, &ans, &anssiz, &terrno,
-				    ns, &v_circuit, &gotsomewhere, ansp);
+			n = send_dg(statp, buf, buflen, buf2, buflen2,
+				    &ans, &anssiz, &terrno,
+				    ns, &v_circuit, &gotsomewhere, ansp,
+				    ansp2, nansp2, resplen2);
 			if (n < 0)
 				return (-1);
 			if (n == 0)
 				goto next_ns;
 			if (v_circuit)
+			  // XXX Check whether both requests failed or
+			  // XXX whether one has been answered successfully
 				goto same_ns;
-			resplen = n;
 		}
+
+		resplen = n;
 
 		Dprint((statp->options & RES_DEBUG) ||
 		       ((statp->pfcode & RES_PRF_REPLY) &&
@@ -553,6 +579,11 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 			(statp->pfcode & RES_PRF_REPLY),
 			(stdout, "%s", ""),
 			ans, (resplen > anssiz) ? anssiz : resplen);
+		if (buf2 != NULL)
+		  DprintQ((statp->options & RES_DEBUG) ||
+			  (statp->pfcode & RES_PRF_REPLY),
+			  (stdout, "%s", ""),
+			  *ansp2, (*resplen2 > *nansp2) ? *nansp2 : *resplen2);
 
 		/*
 		 * If we have temporarily opened a virtual circuit,
@@ -563,7 +594,8 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 		    (statp->options & RES_STAYOPEN) == 0) {
 			__res_iclose(statp, false);
 		}
-		if (statp->rhook) {
+#ifdef USE_HOOKS
+		if (__builtin_expect (statp->rhook, 0)) {
 			int done = 0, loops = 0;
 
 			do {
@@ -593,6 +625,7 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 			} while (!done);
 
 		}
+#endif
 		return (resplen);
  next_ns: ;
 	   } /*foreach ns*/
@@ -612,7 +645,8 @@ int
 res_nsend(res_state statp,
 	  const u_char *buf, int buflen, u_char *ans, int anssiz)
 {
-	return __libc_res_nsend(statp, buf, buflen, ans, anssiz, NULL);
+  return __libc_res_nsend(statp, buf, buflen, NULL, 0, ans, anssiz,
+			  NULL, NULL, NULL, NULL);
 }
 libresolv_hidden_def (res_nsend)
 
@@ -620,19 +654,27 @@ libresolv_hidden_def (res_nsend)
 
 static int
 send_vc(res_state statp,
-	const u_char *buf, int buflen, u_char **ansp, int *anssizp,
-	int *terrno, int ns, u_char **anscp)
+	const u_char *buf, int buflen, const u_char *buf2, int buflen2,
+	u_char **ansp, int *anssizp,
+	int *terrno, int ns, u_char **anscp, u_char **ansp2, int *anssizp2,
+	int *resplen2)
 {
 	const HEADER *hp = (HEADER *) buf;
+	const HEADER *hp2 = (HEADER *) buf2;
 	u_char *ans = *ansp;
-	int anssiz = *anssizp;
+	int orig_anssizp = *anssizp;
+	// XXX REMOVE
+	// int anssiz = *anssizp;
 	HEADER *anhp = (HEADER *) ans;
 	struct sockaddr_in6 *nsap = EXT(statp).nsaddrs[ns];
 	int truncating, connreset, resplen, n;
-	struct iovec iov[2];
+	struct iovec iov[4];
 	u_short len;
+	u_short len2;
 	u_char *cp;
 
+	if (resplen2 != NULL)
+	  *resplen2 = 0;
 	connreset = 0;
  same_ns:
 	truncating = 0;
@@ -677,11 +719,19 @@ send_vc(res_state statp,
 	/*
 	 * Send length & message
 	 */
-	ns_put16((u_short)buflen, (u_char*)&len);
+	len = htons ((u_short) buflen);
 	evConsIovec(&len, INT16SZ, &iov[0]);
 	evConsIovec((void*)buf, buflen, &iov[1]);
-	if (TEMP_FAILURE_RETRY (writev(statp->_vcsock, iov, 2))
-	    != (INT16SZ + buflen)) {
+	int niov = 2;
+	ssize_t explen = INT16SZ + buflen;
+	if (buf2 != NULL) {
+		len2 = htons ((u_short) buflen2);
+		evConsIovec(&len2, INT16SZ, &iov[2]);
+		evConsIovec((void*)buf2, buflen2, &iov[3]);
+		niov = 4;
+		explen += INT16SZ + buflen2;
+	}
+	if (TEMP_FAILURE_RETRY (writev(statp->_vcsock, iov, niov)) != explen) {
 		*terrno = errno;
 		Perror(statp, stderr, "write failed", errno);
 		__res_iclose(statp, false);
@@ -690,10 +740,13 @@ send_vc(res_state statp,
 	/*
 	 * Receive length & response
 	 */
+	int recvresp1 = 0;
+	int recvresp2 = buf2 == NULL;
+	uint16_t rlen16;
  read_len:
-	cp = ans;
-	len = INT16SZ;
-	while ((n = TEMP_FAILURE_RETRY (read(statp->_vcsock, (char *)cp,
+	cp = (u_char *)&rlen16;
+	len = sizeof(rlen16);
+	while ((n = TEMP_FAILURE_RETRY (read(statp->_vcsock, cp,
 					     (int)len))) > 0) {
 		cp += n;
 		if ((len -= n) <= 0)
@@ -718,31 +771,71 @@ send_vc(res_state statp,
 		}
 		return (0);
 	}
-	resplen = ns_get16(ans);
-	if (resplen > anssiz) {
-		if (anscp) {
-			ans = malloc (MAXPACKET);
-			if (ans == NULL) {
+	int rlen = ntohs (rlen16);
+
+	int *thisanssizp;
+	u_char **thisansp;
+	int *thisresplenp;
+	if ((recvresp1 | recvresp2) == 0 || buf2 == NULL) {
+		thisanssizp = anssizp;
+		thisansp = anscp ?: ansp;
+		assert (anscp != NULL || ansp2 == NULL);
+		thisresplenp = &resplen;
+	} else {
+		if (*anssizp != MAXPACKET) {
+			/* No buffer allocated for the first
+			   reply.  We can try to use the rest
+			   of the user-provided buffer.  */
+#ifdef _STRING_ARCH_unaligned
+			*anssizp2 = orig_anssizp - resplen;
+			*ansp2 = *ansp + resplen;
+#else
+			int aligned_resplen
+			  = ((resplen + __alignof__ (HEADER) - 1)
+			     & ~(__alignof__ (HEADER) - 1));
+			*anssizp2 = orig_anssizp - aligned_resplen;
+			*ansp2 = *ansp + aligned_resplen;
+#endif
+		} else {
+			/* The first reply did not fit into the
+			   user-provided buffer.  Maybe the second
+			   answer will.  */
+			*anssizp2 = orig_anssizp;
+			*ansp2 = *ansp;
+		}
+
+		thisanssizp = anssizp2;
+		thisansp = ansp2;
+		thisresplenp = resplen2;
+	}
+	anhp = (HEADER *) *thisansp;
+
+	*thisresplenp = rlen;
+	if (rlen > *thisanssizp) {
+		/* Yes, we test ANSCP here.  If we have two buffers
+		   both will be allocatable.  */
+		if (__builtin_expect (anscp != NULL, 1)) {
+			u_char *newp = malloc (MAXPACKET);
+			if (newp == NULL) {
 				*terrno = ENOMEM;
 				__res_iclose(statp, false);
 				return (0);
 			}
-			anssiz = MAXPACKET;
-			*anssizp = MAXPACKET;
-			*ansp = ans;
-			*anscp = ans;
-			anhp = (HEADER *) ans;
-			len = resplen;
+			*thisanssizp = MAXPACKET;
+			*thisansp = newp;
+			anhp = (HEADER *) newp;
+			len = rlen;
 		} else {
 			Dprint(statp->options & RES_DEBUG,
 				(stdout, ";; response truncated\n")
 			);
 			truncating = 1;
-			len = anssiz;
+			len = *thisanssizp;
 		}
 	} else
-		len = resplen;
-	if (len < HFIXEDSZ) {
+		len = rlen;
+
+	if (__builtin_expect (len < HFIXEDSZ, 0)) {
 		/*
 		 * Undersized message.
 		 */
@@ -752,23 +845,24 @@ send_vc(res_state statp,
 		__res_iclose(statp, false);
 		return (0);
 	}
-	cp = ans;
+
+	cp = *thisansp;
 	while (len != 0 && (n = read(statp->_vcsock, (char *)cp, (int)len)) > 0){
 		cp += n;
 		len -= n;
 	}
-	if (n <= 0) {
+	if (__builtin_expect (n <= 0, 0)) {
 		*terrno = errno;
 		Perror(statp, stderr, "read(vc)", errno);
 		__res_iclose(statp, false);
 		return (0);
 	}
-	if (truncating) {
+	if (__builtin_expect (truncating, 0)) {
 		/*
 		 * Flush rest of answer so connection stays in synch.
 		 */
 		anhp->tc = 1;
-		len = resplen - anssiz;
+		len = rlen - *thisanssizp;
 		while (len != 0) {
 			char junk[PACKETSZ];
 
@@ -787,43 +881,67 @@ send_vc(res_state statp,
 	 * itself confused, then drop the packet and
 	 * wait for the correct one.
 	 */
-	if (hp->id != anhp->id) {
+	if ((recvresp1 || hp->id != anhp->id)
+	    && (recvresp2 || hp2->id != anhp->id)) {
 		DprintQ((statp->options & RES_DEBUG) ||
 			(statp->pfcode & RES_PRF_REPLY),
 			(stdout, ";; old answer (unexpected):\n"),
-			ans, (resplen > anssiz) ? anssiz: resplen);
+			*thisansp,
+			(rlen > *thisanssiz) ? *thisanssiz: rlen);
 		goto read_len;
 	}
+
+	/* Mark which reply we received.  */
+	if (recvresp1 == 0 && hp->id == anhp->id)
+	  recvresp1 = 1;
+	else
+	  recvresp2 = 1;
+	/* Repeat waiting if we have a second answer to arrive.  */
+	if ((recvresp1 & recvresp2) == 0)
+		goto read_len;
 
 	/*
 	 * All is well, or the error is fatal.  Signal that the
 	 * next nameserver ought not be tried.
 	 */
-	return (resplen);
+	return resplen;
 }
 
 static int
 send_dg(res_state statp,
-	const u_char *buf, int buflen, u_char **ansp, int *anssizp,
-	int *terrno, int ns, int *v_circuit, int *gotsomewhere, u_char **anscp)
+	const u_char *buf, int buflen, const u_char *buf2, int buflen2,
+	u_char **ansp, int *anssizp,
+	int *terrno, int ns, int *v_circuit, int *gotsomewhere, u_char **anscp,
+	u_char **ansp2, int *anssizp2, int *resplen2)
 {
 	const HEADER *hp = (HEADER *) buf;
+	const HEADER *hp2 = (HEADER *) buf2;
 	u_char *ans = *ansp;
-	int anssiz = *anssizp;
-	HEADER *anhp = (HEADER *) ans;
+	int orig_anssizp = *anssizp;
 	struct sockaddr_in6 *nsap = EXT(statp).nsaddrs[ns];
 	struct timespec now, timeout, finish;
 	struct pollfd pfd[1];
         int ptimeout;
 	struct sockaddr_in6 from;
-	socklen_t fromlen;
-	int resplen, seconds, n;
+	int resplen, n;
 
 	if (EXT(statp).nssocks[ns] == -1) {
 		/* only try IPv6 if IPv6 NS and if not failed before */
 		if ((EXT(statp).nscount6 > 0) && !statp->ipv6_unavail) {
-			EXT(statp).nssocks[ns] =
-			    socket(PF_INET6, SOCK_DGRAM, 0);
+			if (__builtin_expect (__have_o_nonblock >= 0, 1)) {
+				EXT(statp).nssocks[ns] =
+				  socket(PF_INET6, SOCK_DGRAM|SOCK_NONBLOCK,
+					 0);
+#ifndef __ASSUME_SOCK_CLOEXEC
+				if (__have_o_nonblock == 0)
+					__have_o_nonblock
+					  = (EXT(statp).nssocks[ns] == -1
+					     && errno == EINVAL ? -1 : 1);
+#endif
+			}
+			if (__builtin_expect (__have_o_nonblock < 0, 0))
+				EXT(statp).nssocks[ns] =
+				  socket(PF_INET6, SOCK_DGRAM, 0);
 			if (EXT(statp).nssocks[ns] < 0)
 			    statp->ipv6_unavail = errno == EAFNOSUPPORT;
 			/* If IPv6 socket and nsap is IPv4, make it
@@ -831,8 +949,22 @@ send_dg(res_state statp,
 			else if (nsap->sin6_family == AF_INET)
 			    convaddr4to6(nsap);
 		}
-		if (EXT(statp).nssocks[ns] < 0)
-			EXT(statp).nssocks[ns] = socket(PF_INET, SOCK_DGRAM, 0);
+		if (EXT(statp).nssocks[ns] < 0) {
+			if (__builtin_expect (__have_o_nonblock >= 0, 1)) {
+				EXT(statp).nssocks[ns]
+				  = socket(PF_INET, SOCK_DGRAM|SOCK_NONBLOCK,
+					   0);
+#ifndef __ASSUME_SOCK_CLOEXEC
+				if (__have_o_nonblock == 0)
+					__have_o_nonblock
+					  = (EXT(statp).nssocks[ns] == -1
+					     && errno == EINVAL ? -1 : 1);
+#endif
+			}
+			if (__builtin_expect (__have_o_nonblock < 0, 0))
+				EXT(statp).nssocks[ns]
+				  = socket(PF_INET, SOCK_DGRAM, 0);
+		}
 		if (EXT(statp).nssocks[ns] < 0) {
 			*terrno = errno;
 			Perror(statp, stderr, "socket(dg)", errno);
@@ -857,30 +989,39 @@ send_dg(res_state statp,
 			__res_iclose(statp, false);
 			return (0);
 		}
-		/* Make socket non-blocking.  */
-		int fl = __fcntl (EXT(statp).nssocks[ns], F_GETFL);
-		if  (fl != -1)
-			__fcntl (EXT(statp).nssocks[ns], F_SETFL,
-				 fl | O_NONBLOCK);
-		Dprint(statp->options & RES_DEBUG,
-		       (stdout, ";; new DG socket\n"))
+		if (__builtin_expect (__have_o_nonblock < 0, 0)) {
+			/* Make socket non-blocking.  */
+			int fl = __fcntl (EXT(statp).nssocks[ns], F_GETFL);
+			if  (fl != -1)
+				__fcntl (EXT(statp).nssocks[ns], F_SETFL,
+					 fl | O_NONBLOCK);
+			Dprint(statp->options & RES_DEBUG,
+			       (stdout, ";; new DG socket\n"))
+		}
 	}
 
 	/*
 	 * Compute time for the total operation.
 	 */
-	seconds = (statp->retrans << ns);
+	int seconds = (statp->retrans << ns);
 	if (ns > 0)
 		seconds /= statp->nscount;
 	if (seconds <= 0)
 		seconds = 1;
+	bool single_request = ((statp->options) & RES_SNGLKUP) != 0;// XXX
+	int save_gotsomewhere = *gotsomewhere;
+ retry:
 	evNowTime(&now);
 	evConsTime(&timeout, seconds, 0);
 	evAddTime(&finish, &now, &timeout);
 	int need_recompute = 0;
 	int nwritten = 0;
+	int recvresp1 = 0;
+	int recvresp2 = buf2 == NULL;
 	pfd[0].fd = EXT(statp).nssocks[ns];
 	pfd[0].events = POLLOUT;
+	if (resplen2 != NULL)
+	  *resplen2 = 0;
  wait:
 	if (need_recompute) {
 	recompute_resend:
@@ -893,6 +1034,7 @@ send_dg(res_state statp,
 			return (0);
 		}
 		evSubTime(&timeout, &finish, &now);
+		need_recompute = 0;
 	}
         /* Convert struct timespec in milliseconds.  */
 	ptimeout = timeout.tv_sec * 1000 + timeout.tv_nsec / 1000000;
@@ -905,8 +1047,27 @@ send_dg(res_state statp,
 		need_recompute = 1;
 	}
 	if (n == 0) {
-		Dprint(statp->options & RES_DEBUG, (stdout,
-						    ";; timeout sending\n"));
+		Dprint(statp->options & RES_DEBUG, (stdout, ";; timeout\n"));
+		if (resplen > 1 && (recvresp1 || (buf2 != NULL && recvresp2)))
+		  {
+		    /* There are quite a few broken name servers out
+		       there which don't handle two outstanding
+		       requests from the same source.  There are also
+		       broken firewall settings.  If we time out after
+		       having received one answer switch to the mode
+		       where we send the second request only once we
+		       have received the first answer.  */
+		    if (!single_request)
+		      {
+			single_request = true;
+			*gotsomewhere = save_gotsomewhere;
+			goto retry;
+		      }
+
+		    *resplen2 = 1;
+		    return resplen;
+		  }
+
 		*gotsomewhere = 1;
 		return (0);
 	}
@@ -918,35 +1079,81 @@ send_dg(res_state statp,
 	}
 	__set_errno (0);
 	if (pfd[0].revents & POLLOUT) {
-		if (send (pfd[0].fd, buf, buflen, MSG_NOSIGNAL) != buflen) {
+		ssize_t sr;
+		if (nwritten != 0)
+		  sr = send (pfd[0].fd, buf2, buflen2, MSG_NOSIGNAL);
+		else
+		  sr = send (pfd[0].fd, buf, buflen, MSG_NOSIGNAL);
+
+		if (sr != buflen) {
 			if (errno == EINTR || errno == EAGAIN)
 				goto recompute_resend;
 			Perror(statp, stderr, "send", errno);
 			goto err_out;
 		}
-		pfd[0].events = POLLIN;
+		if (nwritten != 0 || buf2 == NULL || single_request)
+		  pfd[0].events = POLLIN;
+		else
+		  pfd[0].events = POLLIN | POLLOUT;
 		++nwritten;
 		goto wait;
 	} else if (pfd[0].revents & POLLIN) {
-		fromlen = sizeof(struct sockaddr_in6);
-		if (anssiz < MAXPACKET
+		int *thisanssizp;
+		u_char **thisansp;
+		int *thisresplenp;
+
+		if ((recvresp1 | recvresp2) == 0 || buf2 == NULL) {
+			thisanssizp = anssizp;
+			thisansp = anscp ?: ansp;
+			assert (anscp != NULL || ansp2 == NULL);
+			thisresplenp = &resplen;
+		} else {
+			if (*anssizp != MAXPACKET) {
+				/* No buffer allocated for the first
+				   reply.  We can try to use the rest
+				   of the user-provided buffer.  */
+#ifdef _STRING_ARCH_unaligned
+				*anssizp2 = orig_anssizp - resplen;
+				*ansp2 = *ansp + resplen;
+#else
+				int aligned_resplen
+				  = ((resplen + __alignof__ (HEADER) - 1)
+				     & ~(__alignof__ (HEADER) - 1));
+				*anssizp2 = orig_anssizp - aligned_resplen;
+				*ansp2 = *ansp + aligned_resplen;
+#endif
+			} else {
+				/* The first reply did not fit into the
+				   user-provided buffer.  Maybe the second
+				   answer will.  */
+				*anssizp2 = orig_anssizp;
+				*ansp2 = *ansp;
+			}
+
+			thisanssizp = anssizp2;
+			thisansp = ansp2;
+			thisresplenp = resplen2;
+		}
+
+		if (*thisanssizp < MAXPACKET
+		    /* Yes, we test ANSCP here.  If we have two buffers
+		       both will be allocatable.  */
 		    && anscp
-		    && (ioctl (pfd[0].fd, FIONREAD, &resplen) < 0
-		|| anssiz < resplen)) {
-			ans = malloc (MAXPACKET);
-			if (ans == NULL)
-				ans = *ansp;
-			else {
-				anssiz = MAXPACKET;
+		    && (ioctl (pfd[0].fd, FIONREAD, thisresplenp) < 0
+			|| *thisanssizp < *thisresplenp)) {
+			u_char *newp = malloc (MAXPACKET);
+			if (newp != NULL) {
 				*anssizp = MAXPACKET;
-				*ansp = ans;
-				*anscp = ans;
-				anhp = (HEADER *) ans;
+				*thisansp = ans = newp;
 			}
 		}
-		resplen = recvfrom(pfd[0].fd, (char*)ans, anssiz,0,
-				   (struct sockaddr *)&from, &fromlen);
-		if (resplen <= 0) {
+		HEADER *anhp = (HEADER *) *thisansp;
+		socklen_t fromlen = sizeof(struct sockaddr_in6);
+		assert (sizeof(from) <= fromlen);
+		*thisresplenp = recvfrom(pfd[0].fd, (char*)*thisansp,
+					 *thisanssizp, 0,
+					(struct sockaddr *)&from, &fromlen);
+		if (__builtin_expect (*thisresplenp <= 0, 0)) {
 			if (errno == EINTR || errno == EAGAIN) {
 				need_recompute = 1;
 				goto wait;
@@ -955,17 +1162,18 @@ send_dg(res_state statp,
 			goto err_out;
 		}
 		*gotsomewhere = 1;
-		if (resplen < HFIXEDSZ) {
+		if (__builtin_expect (*thisresplenp < HFIXEDSZ, 0)) {
 			/*
 			 * Undersized message.
 			 */
 			Dprint(statp->options & RES_DEBUG,
 			       (stdout, ";; undersized: %d\n",
-				resplen));
+				*thisresplen));
 			*terrno = EMSGSIZE;
 			goto err_out;
 		}
-		if (hp->id != anhp->id) {
+		if ((recvresp1 || hp->id != anhp->id)
+		    && (recvresp2 || hp2->id != anhp->id)) {
 			/*
 			 * response from old query, ignore it.
 			 * XXX - potential security hazard could
@@ -974,7 +1182,9 @@ send_dg(res_state statp,
 			DprintQ((statp->options & RES_DEBUG) ||
 				(statp->pfcode & RES_PRF_REPLY),
 				(stdout, ";; old answer:\n"),
-				ans, (resplen > anssiz) ? anssiz : resplen);
+				thisansp,
+				(*thisresplen > *thisanssiz)
+				? *thisanssiz : *thisresplen);
 			goto wait;
 		}
 		if (!(statp->options & RES_INSECURE1) &&
@@ -987,14 +1197,16 @@ send_dg(res_state statp,
 			DprintQ((statp->options & RES_DEBUG) ||
 				(statp->pfcode & RES_PRF_REPLY),
 				(stdout, ";; not our server:\n"),
-				ans, (resplen > anssiz) ? anssiz : resplen);
+				thisansp,
+				(*thisresplen > *thisanssiz)
+				? *thisanssiz : *thisresplen);
 			goto wait;
 		}
 #ifdef RES_USE_EDNS0
 		if (anhp->rcode == FORMERR
 		    && (statp->options & RES_USE_EDNS0) != 0U) {
 			/*
-			 * Do not retry if the server do not understand
+			 * Do not retry if the server does not understand
 			 * EDNS0.  The case has to be captured here, as
 			 * FORMERR packet do not carry query section, hence
 			 * res_queriesmatch() returns 0.
@@ -1002,15 +1214,23 @@ send_dg(res_state statp,
 			DprintQ(statp->options & RES_DEBUG,
 				(stdout,
 				 "server rejected query with EDNS0:\n"),
-				ans, (resplen > anssiz) ? anssiz : resplen);
+				thisans,
+				(*thisresplen > *thisanssiz)
+				? *thisanssiz : *thisresplen);
 			/* record the error */
 			statp->_flags |= RES_F_EDNS0ERR;
 			goto err_out;
         }
 #endif
-		if (!(statp->options & RES_INSECURE2) &&
-		    !res_queriesmatch(buf, buf + buflen,
-				      ans, ans + anssiz)) {
+		if (!(statp->options & RES_INSECURE2)
+		    && (recvresp1 || !res_queriesmatch(buf, buf + buflen,
+						       *thisansp,
+						       *thisansp
+						       + *thisanssizp))
+		    && (recvresp2 || !res_queriesmatch(buf2, buf2 + buflen2,
+						       *thisansp,
+						       *thisansp
+						       + *thisanssizp))) {
 			/*
 			 * response contains wrong query? ignore it.
 			 * XXX - potential security hazard could
@@ -1019,7 +1239,9 @@ send_dg(res_state statp,
 			DprintQ((statp->options & RES_DEBUG) ||
 				(statp->pfcode & RES_PRF_REPLY),
 				(stdout, ";; wrong query name:\n"),
-				ans, (resplen > anssiz) ? anssiz : resplen);
+				thisansp,
+				(*thisresplen > *thisanssiz)
+				? *thisanssiz : *thisresplen);
 			goto wait;
 		}
 		if (anhp->rcode == SERVFAIL ||
@@ -1027,7 +1249,27 @@ send_dg(res_state statp,
 		    anhp->rcode == REFUSED) {
 			DprintQ(statp->options & RES_DEBUG,
 				(stdout, "server rejected query:\n"),
-				ans, (resplen > anssiz) ? anssiz : resplen);
+				thisansp,
+				(*thisresplen > *thisanssiz)
+				? *thisanssiz : *thisresplen);
+
+			if (recvresp1 || (buf2 != NULL && recvresp2))
+			  {
+			    *resplen2 = 1;
+			    return resplen;
+			  }
+			if (buf2 != NULL)
+			  {
+			    /* We are waiting for a possible second reply.  */
+			    resplen = 1;
+			    if (hp->id == anhp->id)
+			      recvresp1 = 1;
+			    else
+			      recvresp2 = 1;
+
+			    goto wait;
+			  }
+
 		next_ns:
 			__res_iclose(statp, false);
 			/* don't retry if called from dig */
@@ -1038,7 +1280,9 @@ send_dg(res_state statp,
 		    && anhp->aa == 0 && anhp->ra == 0 && anhp->arcount == 0) {
 			DprintQ(statp->options & RES_DEBUG,
 				(stdout, "referred query:\n"),
-				ans, (resplen > anssiz) ? anssiz : resplen);
+				thisansp,
+				(*thisresplen > *thisanssiz)
+				? *thisanssiz : *thisresplen);
 			goto next_ns;
 		}
 		if (!(statp->options & RES_IGNTC) && anhp->tc) {
@@ -1050,7 +1294,20 @@ send_dg(res_state statp,
 			       (stdout, ";; truncated answer\n"));
 			*v_circuit = 1;
 			__res_iclose(statp, false);
+			// XXX if we have received one reply we could
+			// XXX use it and not repeat it over TCP...
 			return (1);
+		}
+		/* Mark which reply we received.  */
+		if (recvresp1 == 0 && hp->id == anhp->id)
+			recvresp1 = 1;
+		else
+			recvresp2 = 1;
+		/* Repeat waiting if we have a second answer to arrive.  */
+		if ((recvresp1 & recvresp2) == 0) {
+			if (single_request)
+				pfd[0].events = POLLOUT;
+			goto wait;
 		}
 		/*
 		 * All is well, or the error is fatal.  Signal that the

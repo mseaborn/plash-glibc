@@ -1,5 +1,5 @@
 /* Run-time dynamic linker data structures for loaded ELF shared objects.
-   Copyright (C) 1995-2006, 2007, 2008 Free Software Foundation, Inc.
+   Copyright (C) 1995-2006, 2007, 2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -38,6 +38,7 @@
 #include <bits/libc-lock.h>
 #include <hp-timing.h>
 #include <tls.h>
+#include <kernel-features.h>
 
 __BEGIN_DECLS
 
@@ -385,6 +386,8 @@ struct rtld_global
     /* Keep track of changes to each namespace' list.  */
     struct r_debug _ns_debug;
   } _dl_ns[DL_NNS];
+  /* One higher than index of last used namespace.  */
+  EXTERN size_t _dl_nns;
 
   /* During the program run we must not modify the global data of
      loaded shared object simultanously in two threads.  Therefore we
@@ -397,11 +400,6 @@ struct rtld_global
 
   /* Incremented whenever something may have been added to dl_loaded.  */
   EXTERN unsigned long long _dl_load_adds;
-
-#ifndef MAP_ANON
-  /* File descriptor referring to the zero-fill device.  */
-  EXTERN int _dl_zerofd;
-#endif
 
   /* The object to be initialized first.  */
   EXTERN struct link_map *_dl_initfirst;
@@ -730,6 +728,9 @@ weak_extern (_dl_starting_up)
 extern int _dl_starting_up_internal attribute_hidden;
 #endif
 
+/* Random data provided by the kernel.  */
+extern void *_dl_random attribute_hidden;
+
 /* OS-dependent function to open the zero-fill device.  */
 extern int _dl_sysdep_open_zero_fill (void); /* dl-sysdep.c */
 
@@ -878,10 +879,10 @@ extern struct link_map *_dl_new_object (char *realname, const char *libname,
 
 /* Relocate the given object (if it hasn't already been).
    SCOPE is passed to _dl_lookup_symbol in symbol lookups.
-   If LAZY is nonzero, don't relocate its PLT.  */
+   If RTLD_LAZY is set in RELOC-MODE, don't relocate its PLT.  */
 extern void _dl_relocate_object (struct link_map *map,
 				 struct r_scope_elem *scope[],
-				 int lazy, int consider_profiling)
+				 int reloc_mode, int consider_profiling)
      attribute_hidden;
 
 /* Protect PT_GNU_RELRO area.  */

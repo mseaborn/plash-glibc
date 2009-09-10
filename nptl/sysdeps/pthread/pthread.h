@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007
+/* Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -63,12 +63,14 @@ enum
 };
 
 
-#ifdef __USE_GNU
+#ifdef __USE_XOPEN2K
 /* Robust mutex or not flags.  */
 enum
 {
-  PTHREAD_MUTEX_STALLED_NP,
-  PTHREAD_MUTEX_ROBUST_NP
+  PTHREAD_MUTEX_STALLED,
+  PTHREAD_MUTEX_STALLED_NP = PTHREAD_MUTEX_STALLED,
+  PTHREAD_MUTEX_ROBUST,
+  PTHREAD_MUTEX_ROBUST_NP = PTHREAD_MUTEX_ROBUST
 };
 #endif
 
@@ -127,7 +129,7 @@ enum
 #  if __WORDSIZE == 64
 #   define PTHREAD_RWLOCK_WRITER_NONRECURSIVE_INITIALIZER_NP \
   { { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,					      \
-      PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP } }
+	PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP } }
 #  else
 #   if __BYTE_ORDER == __LITTLE_ENDIAN
 #    define PTHREAD_RWLOCK_WRITER_NONRECURSIVE_INITIALIZER_NP \
@@ -399,7 +401,7 @@ extern int pthread_attr_getaffinity_np (__const pthread_attr_t *__attr,
 
 
 /* Initialize thread attribute *ATTR with attributes corresponding to the
-   already running thread TH.  It shall be called on unitialized ATTR
+   already running thread TH.  It shall be called on uninitialized ATTR
    and destroyed with pthread_attr_destroy when no longer needed.  */
 extern int pthread_getattr_np (pthread_t __th, pthread_attr_t *__attr)
      __THROW __nonnull ((2));
@@ -655,7 +657,7 @@ extern void __pthread_register_cancel (__pthread_unwind_buf_t *__buf)
 /* Remove a cleanup handler installed by the matching pthread_cleanup_push.
    If EXECUTE is non-zero, the handler function is called. */
 # define pthread_cleanup_pop(execute) \
-      do; while (0); /* Empty to allow label before pthread_cleanup_pop.  */  \
+      do { } while (0);/* Empty to allow label before pthread_cleanup_pop.  */\
     } while (0);							      \
     __pthread_unregister_cancel (&__cancel_buf);			      \
     if (execute)							      \
@@ -691,7 +693,7 @@ extern void __pthread_register_cancel_defer (__pthread_unwind_buf_t *__buf)
    restores the cancellation type that was in effect when the matching
    pthread_cleanup_push_defer was called.  */
 #  define pthread_cleanup_pop_restore_np(execute) \
-      do; while (0); /* Empty to allow label before pthread_cleanup_pop.  */  \
+      do { } while (0);/* Empty to allow label before pthread_cleanup_pop.  */\
     } while (0);							      \
     __pthread_unregister_cancel_restore (&__cancel_buf);		      \
     if (execute)							      \
@@ -762,10 +764,14 @@ extern int pthread_mutex_setprioceiling (pthread_mutex_t *__restrict __mutex,
 #endif
 
 
-#ifdef __USE_GNU
+#ifdef __USE_XOPEN2K8
 /* Declare the state protected by MUTEX as consistent.  */
 extern int pthread_mutex_consistent_np (pthread_mutex_t *__mutex)
      __THROW __nonnull ((1));
+# ifdef __USE_GNU
+extern int pthread_mutex_consistent_np (pthread_mutex_t *__mutex)
+     __THROW __nonnull ((1));
+# endif
 #endif
 
 
@@ -827,16 +833,26 @@ extern int pthread_mutexattr_setprioceiling (pthread_mutexattr_t *__attr,
      __THROW __nonnull ((1));
 #endif
 
-#ifdef __USE_GNU
+#ifdef __USE_XOPEN2K
 /* Get the robustness flag of the mutex attribute ATTR.  */
+extern int pthread_mutexattr_getrobust (__const pthread_mutexattr_t *__attr,
+					int *__robustness)
+     __THROW __nonnull ((1, 2));
+# ifdef __USE_GNU
 extern int pthread_mutexattr_getrobust_np (__const pthread_mutexattr_t *__attr,
 					   int *__robustness)
      __THROW __nonnull ((1, 2));
+# endif
 
 /* Set the robustness flag of the mutex attribute ATTR.  */
+extern int pthread_mutexattr_setrobust (pthread_mutexattr_t *__attr,
+					int __robustness)
+     __THROW __nonnull ((1));
+# ifdef __USE_GNU
 extern int pthread_mutexattr_setrobust_np (pthread_mutexattr_t *__attr,
 					   int __robustness)
      __THROW __nonnull ((1));
+# endif
 #endif
 
 

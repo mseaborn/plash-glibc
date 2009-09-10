@@ -1,4 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2006, 2007 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2004, 2006-2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
 
@@ -52,7 +52,12 @@
 #define FUTEX_LOCK_PI		6
 #define FUTEX_UNLOCK_PI		7
 #define FUTEX_TRYLOCK_PI	8
+#define FUTEX_WAIT_BITSET	9
+#define FUTEX_WAKE_BITSET	10
 #define FUTEX_PRIVATE_FLAG	128
+#define FUTEX_CLOCK_REALTIME	256
+
+#define FUTEX_BITSET_MATCH_ANY	0xffffffff
 
 #define FUTEX_OP_CLEAR_WAKE_IF_GT_ONE	((4 << 24) | 1)
 
@@ -86,7 +91,7 @@
 	asm ("andl %%gs:%P1, %0" : "+r" (__fl)				      \
 	     : "i" (offsetof (struct pthread, header.private_futex)));	      \
 	__fl | (fl); }))
-# endif	      
+# endif
 #endif
 
 #ifndef __ASSEMBLER__
@@ -323,7 +328,7 @@ LLL_STUB_UNWIND_INFO_END
 			       "=m" (futex), "=&d" (ignore3) 		      \
 			     : "1" (1), "m" (futex),			      \
 			       "i" (MULTIPLE_THREADS_OFFSET), "0" (0),	      \
-			       "g" (private)				      \
+			       "g" ((int) (private))			      \
 			     : "memory");				      \
 	 }								      \
     })
@@ -345,7 +350,7 @@ LLL_STUB_UNWIND_INFO_END
 		       "18:"						      \
 		       : "=a" (result), "=c" (ignore1), "=m" (futex),	      \
 			 "=&d" (ignore2)				      \
-		       : "0" (0), "1" (id), "m" (futex), "g" (private)	      \
+		       : "0" (0), "1" (id), "m" (futex), "g" ((int) (private))\
 		       : "memory");					      \
      result; })
 
@@ -370,7 +375,7 @@ LLL_STUB_UNWIND_INFO_END
 			 "18:"						      \
 			 : "=a" (ignore1), "=c" (ignore2), "=m" (futex),      \
 			   "=&d" (ignore3)				      \
-			 : "0" (0), "1" (2), "m" (futex), "g" (private)	      \
+			 : "0" (0), "1" (2), "m" (futex), "g" ((int) (private))\
 			 : "memory");					      \
     })
 
@@ -393,7 +398,7 @@ LLL_STUB_UNWIND_INFO_END
 		       : "=a" (result), "=c" (ignore1), "=m" (futex),	      \
 			 "=&d" (ignore2)				      \
 		       : "0" (0), "1" (id | FUTEX_WAITERS), "m" (futex),      \
-			 "g" (private)					      \
+			 "g" ((int) (private))				      \
 		       : "memory");					      \
      result; })
 
@@ -416,7 +421,7 @@ LLL_STUB_UNWIND_INFO_END
 		       : "=a" (result), "=c" (ignore1), "=&d" (ignore2),      \
 			 "=m" (futex), "=S" (ignore3)			      \
 		       : "0" (0), "1" (1), "m" (futex), "m" (timeout),	      \
-			 "4" (private)					      \
+			 "4" ((int) (private))				      \
 		       : "memory");					      \
      result; })
 
@@ -439,7 +444,7 @@ LLL_STUB_UNWIND_INFO_END
 		       : "=a" (result), "=c" (ignore1), "=&d" (ignore2),      \
 			 "=m" (futex), "=S" (ignore3)			      \
 		       : "0" (0), "1" (id), "m" (futex), "m" (timeout),	      \
-			 "4" (private)					      \
+			 "4" ((int) (private))				      \
 		       : "memory");					      \
      result; })
 
@@ -489,7 +494,7 @@ LLL_STUB_UNWIND_INFO_END
 			     "18:"					      \
 			     : "=m" (futex), "=&a" (ignore), "=&c" (ignore2)  \
 			     : "i" (MULTIPLE_THREADS_OFFSET), "m" (futex),    \
-			       "g" (private)				      \
+			       "g" ((int) (private))			      \
 			     : "memory");				      \
 	 }								      \
     })
@@ -511,7 +516,8 @@ LLL_STUB_UNWIND_INFO_END
 			 LLL_STUB_UNWIND_INFO_4				      \
 			 "18:"						      \
 			 : "=m" (futex), "=&a" (ignore), "=&c" (ignore2)      \
-			 : "i" (FUTEX_WAITERS), "m" (futex), "g" (private)    \
+			 : "i" (FUTEX_WAITERS), "m" (futex),		      \
+			   "g" ((int) (private))			      \
 			 : "memory");					      \
     })
 

@@ -1,5 +1,5 @@
 /* Definition for thread-local data handling.  nptl/x86_64 version.
-   Copyright (C) 2002,2003,2004,2005,2006,2007 Free Software Foundation, Inc.
+   Copyright (C) 2002-2007, 2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -28,6 +28,7 @@
 # include <stdlib.h>
 # include <sysdep.h>
 # include <kernel-features.h>
+# include <bits/wordsize.h>
 
 
 /* Type for the dtv.  */
@@ -56,7 +57,14 @@ typedef struct
   unsigned long int vgetcpu_cache[2];
 #ifndef __ASSUME_PRIVATE_FUTEX
   int private_futex;
+#else
+  int __unused1;
 #endif
+#if __WORDSIZE == 64
+  int __pad1;
+#endif
+  /* Reservation of some values for the TM ABI.  */
+  void *__private_tm[5];
 } tcbhead_t;
 
 #else /* __ASSEMBLER__ */
@@ -302,6 +310,17 @@ typedef struct
        /* Not necessary for other sizes in the moment.  */		      \
        abort ();							      \
      __ret; })
+
+
+/* Atomic logical and.  */
+#define THREAD_ATOMIC_AND(descr, member, val) \
+  (void) ({ if (sizeof ((descr)->member) == 4)				      \
+	      asm volatile (LOCK_PREFIX "andl %1, %%fs:%P0"		      \
+			    :: "i" (offsetof (struct pthread, member)),	      \
+			       "ir" (val));				      \
+	    else							      \
+	      /* Not necessary for other sizes in the moment.  */	      \
+	      abort (); })
 
 
 /* Atomic set bit.  */

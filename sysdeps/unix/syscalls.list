@@ -10,6 +10,7 @@ kernel_close		-	close		Ci:i	kernel_close
 kernel_dup		-	dup		i:i	kernel_dup
 dup		-	dup		i:i	__dup		dup
 kernel_dup2		-	dup2		i:ii	kernel_dup2
+dup3		-	dup3		i:iii	dup3
 #fchdir		-	fchdir		i:i	__fchdir	fchdir
 fcntl		-	fcntl		Ci:iiF	__libc_fcntl	__fcntl __fcntl_internal fcntl
 fstatfs		-	fstatfs		i:ip	__fstatfs	fstatfs

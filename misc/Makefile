@@ -1,4 +1,4 @@
-# Copyright (C) 1991-2006, 2007 Free Software Foundation, Inc.
+# Copyright (C) 1991-2006, 2007, 2009 Free Software Foundation, Inc.
 # This file is part of the GNU C Library.
 
 # The GNU C Library is free software; you can redistribute it and/or
@@ -34,7 +34,7 @@ headers	:= sys/uio.h bits/uio.h sys/ioctl.h bits/ioctls.h bits/ioctl-types.h \
 	   bits/syslog.h bits/syslog-ldbl.h bits/syslog-path.h bits/error.h
 
 routines := brk sbrk sstk ioctl \
-	    readv writev \
+	    readv writev preadv preadv64 pwritev pwritev64 \
 	    setreuid setregid \
 	    seteuid setegid \
 	    getpagesize \
@@ -79,7 +79,7 @@ endif
 gpl2lgpl := error.c error.h
 
 tests := tst-dirname tst-tsearch tst-fdset tst-efgcvt tst-mntent tst-hsearch \
-	 tst-error1 tst-pselect tst-insremque tst-mntent2
+	 tst-error1 tst-pselect tst-insremque tst-mntent2 bug-hsearch1
 ifeq (no,$(cross-compiling))
 tests: $(objpfx)tst-error1-mem
 endif

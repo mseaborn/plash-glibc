@@ -6,6 +6,15 @@ AC_CONFIG_SRCDIR([include/features.h])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([scripts])
 
+AC_PROG_CC
+if test $host != $build; then
+  AC_CHECK_PROGS(BUILD_CC, gcc cc)
+fi
+AC_SUBST(cross_compiling)
+AC_PROG_CPP
+# We need the C++ compiler only for testing.
+AC_PROG_CXX
+
 if test "`cd $srcdir; /bin/pwd`" = "`/bin/pwd`"; then
   AC_MSG_ERROR([you must configure in a separate build directory])
 fi
@@ -254,6 +263,59 @@ AC_ARG_ENABLE([all-warnings],
 	      [])
 AC_SUBST(all_warnings)
 
+AC_ARG_ENABLE([multi-arch],
+	      AC_HELP_STRING([--enable-multi-arch],
+			     [enable single DSO with optimizations for multiple architectures]),
+	      [multi_arch=$enableval],
+	      [multi_arch=no])
+if test x"$multi_arch" = xyes; then
+  AC_DEFINE(USE_MULTIARCH)
+  multi_arch_d=/multiarch
+fi
+AC_SUBST(multi_arch)
+
+AC_ARG_ENABLE([experimental-malloc],
+	      AC_HELP_STRING([--enable-experimental-malloc],
+			     [enable experimental malloc features]),
+	      [experimental_malloc=$enableval],
+	      [])
+AC_SUBST(experimental_malloc)
+
+AC_ARG_ENABLE([nss-crypt],
+	      AC_HELP_STRING([--enable-nss-crypt],
+			     [enable libcrypt to use nss]),
+	      [nss_crypt=$enableval],
+	      [nss_crypt=no])
+if test x$nss_crypt = xyes; then
+  nss_includes=-I$(nss-config --includedir 2>/dev/null)
+  if test $? -ne 0; then
+    AC_MSG_ERROR([cannot find include directory with nss-config])
+  fi
+  old_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS $nss_includes"
+  AC_COMPILE_IFELSE([typedef int PRBool;
+#include <hasht.h>
+#include <nsslowhash.h>
+void f (void) { NSSLOW_Init (); }],
+	     libc_cv_nss_crypt=yes,
+	     AC_MSG_ERROR([
+cannot find NSS headers with lowlevel hash function interfaces]))
+  old_LIBS="$LIBS"
+  LIBS="$LIBS -lfreebl3"
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([typedef int PRBool;
+#include <hasht.h>
+#include <nsslowhash.h>],
+				  [NSSLOW_Init();])],
+		 libc_cv_nss_crypt=yes,
+		 AC_MSG_ERROR([
+cannot link program using lowlevel NSS hash functions]))
+  CFLAGS="$old_CFLAGS"
+  LIBS="$old_LIBS"
+else
+  libc_cv_nss_crypt=no
+fi
+AC_SUBST(libc_cv_nss_crypt)
+
 AC_CANONICAL_HOST
 
 # The way shlib-versions is used to generate soversions.mk uses a
@@ -325,7 +387,6 @@ AC_ARG_WITH([cpu],
   *) submachine="$withval" ;;
   esac
 ])
-
 
 # An add-on can set this when it wants to disable the sanity check below.
 libc_config_ok=no
@@ -485,7 +546,6 @@ changequote(,)dnl
 # base_machine, we don't change it.
 test -n "$base_machine" || case "$machine" in
 a29k | am29000)	base_machine=a29k machine=a29k ;;
-alpha*)		base_machine=alpha machine=alpha/$machine ;;
 c3[012])	base_machine=cx0 machine=cx0/c30 ;;
 c4[04])		base_machine=cx0 machine=cx0/c40 ;;
 i[34567]86)	base_machine=i386 machine=i386/$machine ;;
@@ -610,7 +670,7 @@ for b in $base ''; do
       test "$v" = / && continue
       for o in /$ostry ''; do
 	test "$o" = / && continue
-	for m in $mach ''; do
+	for m in $multi_arch_d $mach ''; do
 	  for d in $add_ons_pfx ''; do
 	    for a in $add_ons_sfx ''; do
 	      if test -n "$m0$m0sub$b$v$o$m$msub"; then
@@ -831,14 +891,6 @@ if test "$INSTALL" = "${srcdir}/scripts/install-sh -c"; then
 fi
 AC_PROG_LN_S
 
-AC_PROG_CC
-if test $host != $build; then
-  AC_CHECK_PROGS(BUILD_CC, gcc cc)
-fi
-AC_SUBST(cross_compiling)
-AC_PROG_CPP
-# We need the C++ compiler only for testing.
-AC_PROG_CXX
 LIBC_PROG_BINUTILS
 AC_SUBST(MIG)dnl Needed by sysdeps/mach/configure.in
 
@@ -1157,6 +1209,29 @@ EOF
 done])
 if test "x$libc_cv_asm_type_prefix" != xno; then
   AC_DEFINE_UNQUOTED(ASM_TYPE_DIRECTIVE_PREFIX, ${libc_cv_asm_type_prefix})
+fi
+
+# For the multi-arch option we need support in the assembler.
+if test "$multi_arch" = yes; then
+  if test "x$libc_cv_asm_type_prefix" != xno; then
+AC_CACHE_CHECK([for assembler gnu_indirect_function symbol type support],
+               libc_cv_asm_gnu_indirect_function, [dnl
+cat > conftest.s <<EOF
+.type foo,%gnu_indirect_function
+EOF
+if ${CC-cc} -c $ASFLAGS conftest.s 1>&AS_MESSAGE_LOG_FD 2>&AS_MESSAGE_LOG_FD;
+then
+  libc_cv_asm_gnu_indirect_function=yes
+else
+  libc_cv_asm_gnu_indirect_function=no
+fi
+rm -f conftest*])
+  else
+    libc_cv_asm_gnu_indirect_function=no
+  fi
+  if test x"$libc_cv_asm_gnu_indirect_function" != xyes; then
+    AC_MSG_ERROR([--enable-multi-arch support requires assembler and linker support])
+  fi
 fi
 
 AC_CACHE_CHECK(for .symver assembler directive, libc_cv_asm_symver_directive,
@@ -1638,7 +1713,7 @@ cat > conftest.c <<EOF
 int foo;
 main () { return 0;}
 EOF
-if AC_TRY_COMMAND([${CC-cc} $CFLAGS $CPPFLAGS $LDFLAGS -fstack-protector
+if AC_TRY_COMMAND([${CC-cc} $CFLAGS $CPPFLAGS $LDFLAGS -Werror -fstack-protector
 			    -o conftest conftest.c 1>&AS_MESSAGE_LOG_FD])
 then
   libc_cv_ssp=yes
@@ -1973,6 +2048,22 @@ EOF
   fi
 fi
 
+if test -n "$submachine"; then
+  AC_CACHE_CHECK([for compiler option for CPU variant],
+  		 libc_cv_cc_submachine, [dnl
+  libc_cv_cc_submachine=no
+  for opt in "-march=$submachine" "-mcpu=$submachine"; do
+    if AC_TRY_COMMAND([${CC-cc} $opt -xc /dev/null -S -o /dev/null]); then
+      libc_cv_cc_submachine="$opt"
+      break
+    fi
+  done])
+  if test "x$libc_cv_cc_submachine" = xno; then
+    AC_MSG_ERROR([${CC-cc} does not support $submachine])
+  fi
+fi
+AC_SUBST(libc_cv_cc_submachine)
+
 dnl Check whether we have the gd library available.
 AC_MSG_CHECKING(for libgd)
 if test "$with_gd" != "no"; then
@@ -2166,6 +2257,9 @@ AC_SUBST(libc_cv_sysconfdir)
 AC_SUBST(libc_cv_rootsbindir)
 AC_SUBST(libc_cv_forced_unwind)
 
+dnl sysdeps/CPU/configure.in checks set this via arch-specific asm tests
+AC_SUBST(libc_cv_cpp_asm_debuginfo)
+
 AC_SUBST(use_ldconfig)
 AC_SUBST(ldd_rewrite_script)
 
@@ -2183,18 +2277,18 @@ if test $shared = default; then
   shared=$elf
 fi
 
-AC_CACHE_CHECK([whether -fPIC is default], pic_default,
-[pic_default=yes
+AC_CACHE_CHECK([whether -fPIC is default], libc_cv_pic_default,
+[libc_cv_pic_default=yes
 cat > conftest.c <<EOF
 #if defined __PIC__ || defined __pic__ || defined PIC || defined pic
 # error PIC is default.
 #endif
 EOF
 if eval "${CC-cc} -S conftest.c 2>&AS_MESSAGE_LOG_FD 1>&AS_MESSAGE_LOG_FD"; then
-  pic_default=no
+  libc_cv_pic_default=no
 fi
 rm -f conftest.*])
-AC_SUBST(pic_default)
+AC_SUBST(libc_cv_pic_default)
 
 AC_SUBST(profile)
 AC_SUBST(omitfp)

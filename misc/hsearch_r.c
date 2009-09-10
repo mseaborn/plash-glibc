@@ -1,4 +1,5 @@
-/* Copyright (C) 1993,1995-1997,2002,2005,2007 Free Software Foundation, Inc.
+/* Copyright (C) 1993,1995-1997,2002,2005,2007,2008,2009
+   Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@gnu.ai.mit.edu>, 1993.
 
@@ -78,6 +79,10 @@ hcreate_r (nel, htab)
   if (htab->table != NULL)
     return 0;
 
+  /* We need a size of at least 3.  Otherwise the hash functions we
+     use will not work.  */
+  if (nel < 3)
+    nel = 3;
   /* Change nel to the first prime number not smaller as nel. */
   nel |= 1;      /* make odd */
   while (!isprime (nel))
@@ -152,20 +157,15 @@ hsearch_r (item, action, retval, htab)
       hval <<= 4;
       hval += item.key[count];
     }
-
-  /* First hash function: simply take the modul but prevent zero. */
-  hval %= htab->size;
   if (hval == 0)
     ++hval;
 
-  /* The first index tried. */
-  idx = hval;
+  /* First hash function: simply take the modul but prevent zero. */
+  idx = hval % htab->size + 1;
 
   if (htab->table[idx].used)
     {
       /* Further action might be required according to the action value. */
-      unsigned hval2;
-
       if (htab->table[idx].used == hval
 	  && strcmp (item.key, htab->table[idx].entry.key) == 0)
 	{
@@ -174,7 +174,8 @@ hsearch_r (item, action, retval, htab)
 	}
 
       /* Second hash function, as suggested in [Knuth] */
-      hval2 = 1 + hval % (htab->size - 2);
+      unsigned int hval2 = 1 + hval % (htab->size - 2);
+      unsigned int first_idx = idx;
 
       do
 	{
@@ -186,7 +187,7 @@ hsearch_r (item, action, retval, htab)
 	    idx -= hval2;
 
 	  /* If we visited all entries leave the loop unsuccessfully.  */
-	  if (idx == hval)
+	  if (idx == first_idx)
 	    break;
 
             /* If entry is found use it. */

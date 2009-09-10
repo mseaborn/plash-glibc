@@ -1,5 +1,4 @@
-/* Copyright (c) 1998, 1999, 2000, 2001, 2003, 2004, 2005, 2006, 2007, 2008
-   Free Software Foundation, Inc.
+/* Copyright (c) 1998-2001, 2003-2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Thorsten Kukuk <kukuk@suse.de>, 1998.
 
@@ -69,10 +68,13 @@ struct database_dyn
   pthread_rwlock_t lock;
   pthread_cond_t prune_cond;
   pthread_mutex_t prune_lock;
+  pthread_mutex_t prune_run_lock;
   time_t wakeup_time;
 
   int enabled;
   int check_file;
+  int inotify_descr;
+  int clear_cache;
   int persistent;
   int shared;
   int propagate;
@@ -130,7 +132,7 @@ struct database_dyn
 
 
 /* Global variables.  */
-extern struct database_dyn dbs[lastdb];
+extern struct database_dyn dbs[lastdb] attribute_hidden;
 extern const char *const dbnames[lastdb];
 extern const char *const serv2str[LASTREQ];
 
@@ -206,7 +208,8 @@ extern struct datahead *cache_search (request_type, void *key, size_t len,
 				      uid_t owner);
 extern int cache_add (int type, const void *key, size_t len,
 		      struct datahead *packet, bool first,
-		      struct database_dyn *table, uid_t owner);
+		      struct database_dyn *table, uid_t owner,
+		      bool prune_wakeup);
 extern time_t prune_cache (struct database_dyn *table, time_t now, int fd);
 
 /* pwdcache.c */
@@ -271,7 +274,8 @@ extern void readdservbyport (struct database_dyn *db, struct hashentry *he,
 			     struct datahead *dh);
 
 /* mem.c */
-extern void *mempool_alloc (struct database_dyn *db, size_t len);
+extern void *mempool_alloc (struct database_dyn *db, size_t len,
+			    int data_alloc);
 extern void gc (struct database_dyn *db);
 
 

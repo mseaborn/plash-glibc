@@ -139,7 +139,7 @@ endif
 
 ifeq ($(subdir),io)
 sysdep_routines += xstatconv internal_statvfs internal_statvfs64 \
-		   sync_file_range open_2 open64_2
+		   sync_file_range open_2 open64_2 fallocate fallocate64
 endif
 
 ifeq ($(subdir),elf)
@@ -154,7 +154,7 @@ CFLAGS-mq_receive.c += -fexceptions
 endif
 
 ifeq ($(subdir),nscd)
-CFLAGS-connections.c += -DHAVE_EPOLL -DHAVE_SENDFILE
+CFLAGS-connections.c += -DHAVE_EPOLL -DHAVE_SENDFILE -DHAVE_INOTIFY
 CFLAGS-pwdcache.c += -DHAVE_SENDFILE
 CFLAGS-grpcache.c += -DHAVE_SENDFILE
 CFLAGS-hstcache.c += -DHAVE_SENDFILE

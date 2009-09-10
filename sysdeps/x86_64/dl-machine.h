@@ -1,5 +1,5 @@
 /* Machine-dependent ELF dynamic relocation inline functions.  x86-64 version.
-   Copyright (C) 2001-2005, 2006 Free Software Foundation, Inc.
+   Copyright (C) 2001-2005, 2006, 2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Andreas Jaeger <aj@suse.de>.
 
@@ -26,6 +26,7 @@
 #include <sys/param.h>
 #include <sysdep.h>
 #include <tls.h>
+#include <dl-tlsdesc.h>
 
 /* Return nonzero iff ELF header is compatible with the running host.  */
 static inline int __attribute__ ((unused))
@@ -131,6 +132,10 @@ elf_machine_runtime_setup (struct link_map *l, int lazy, int profile)
 	got[2] = (Elf64_Addr) &_dl_runtime_resolve;
     }
 
+  if (l->l_info[ADDRIDX (DT_TLSDESC_GOT)] && lazy)
+    *(Elf64_Addr*)(D_PTR (l, l_info[ADDRIDX (DT_TLSDESC_GOT)]) + l->l_addr)
+      = (Elf64_Addr) &_dl_tlsdesc_resolve_rela;
+
   return lazy;
 }
 
@@ -194,7 +199,9 @@ _dl_start_user:\n\
 # define elf_machine_type_class(type)					      \
   ((((type) == R_X86_64_JUMP_SLOT					      \
      || (type) == R_X86_64_DTPMOD64					      \
-     || (type) == R_X86_64_DTPOFF64 || (type) == R_X86_64_TPOFF64)	      \
+     || (type) == R_X86_64_DTPOFF64					      \
+     || (type) == R_X86_64_TPOFF64					      \
+     || (type) == R_X86_64_TLSDESC)					      \
     * ELF_RTYPE_CLASS_PLT)						      \
    | (((type) == R_X86_64_COPY) * ELF_RTYPE_CLASS_COPY))
 #else
@@ -259,40 +266,45 @@ elf_machine_rela (struct link_map *map, const Elf64_Rela *reloc,
   Elf64_Addr *const reloc_addr = reloc_addr_arg;
   const unsigned long int r_type = ELF64_R_TYPE (reloc->r_info);
 
-#if !defined RTLD_BOOTSTRAP || !defined HAVE_Z_COMBRELOC
+# if !defined RTLD_BOOTSTRAP || !defined HAVE_Z_COMBRELOC
   if (__builtin_expect (r_type == R_X86_64_RELATIVE, 0))
     {
-# if !defined RTLD_BOOTSTRAP && !defined HAVE_Z_COMBRELOC
+#  if !defined RTLD_BOOTSTRAP && !defined HAVE_Z_COMBRELOC
       /* This is defined in rtld.c, but nowhere in the static libc.a;
 	 make the reference weak so static programs can still link.
 	 This declaration cannot be done when compiling rtld.c
 	 (i.e. #ifdef RTLD_BOOTSTRAP) because rtld.c contains the
 	 common defn for _dl_rtld_map, which is incompatible with a
 	 weak decl in the same file.  */
-#  ifndef SHARED
+#   ifndef SHARED
       weak_extern (GL(dl_rtld_map));
-#  endif
+#   endif
       if (map != &GL(dl_rtld_map)) /* Already done in rtld itself.  */
-# endif
+#  endif
 	*reloc_addr = map->l_addr + reloc->r_addend;
     }
   else
-#endif
+# endif
   if (__builtin_expect (r_type == R_X86_64_NONE, 0))
     return;
   else
     {
-#ifndef RTLD_BOOTSTRAP
+# ifndef RTLD_BOOTSTRAP
       const Elf64_Sym *const refsym = sym;
-#endif
+# endif
       struct link_map *sym_map = RESOLVE_MAP (&sym, version, r_type);
       Elf64_Addr value = (sym == NULL ? 0
 			  : (Elf64_Addr) sym_map->l_addr + sym->st_value);
 
-#if defined RTLD_BOOTSTRAP && !USE___THREAD
+      if (sym != NULL
+	  && __builtin_expect (ELFW(ST_TYPE) (sym->st_info) == STT_GNU_IFUNC,
+			       0))
+	value = ((Elf64_Addr (*) (void)) value) ();
+
+# if defined RTLD_BOOTSTRAP && !USE___THREAD
       assert (r_type == R_X86_64_GLOB_DAT || r_type == R_X86_64_JUMP_SLOT);
       *reloc_addr = value + reloc->r_addend;
-#else
+# else
       switch (r_type)
 	{
 	case R_X86_64_GLOB_DAT:
@@ -300,38 +312,73 @@ elf_machine_rela (struct link_map *map, const Elf64_Rela *reloc,
 	  *reloc_addr = value + reloc->r_addend;
 	  break;
 
-#ifndef RESOLVE_CONFLICT_FIND_MAP
+# ifndef RESOLVE_CONFLICT_FIND_MAP
 	case R_X86_64_DTPMOD64:
-# ifdef RTLD_BOOTSTRAP
+#  ifdef RTLD_BOOTSTRAP
 	  /* During startup the dynamic linker is always the module
 	     with index 1.
 	     XXX If this relocation is necessary move before RESOLVE
 	     call.  */
 	  *reloc_addr = 1;
-# else
+#  else
 	  /* Get the information from the link map returned by the
 	     resolve function.  */
 	  if (sym_map != NULL)
 	    *reloc_addr = sym_map->l_tls_modid;
-# endif
+#  endif
 	  break;
 	case R_X86_64_DTPOFF64:
-# ifndef RTLD_BOOTSTRAP
+#  ifndef RTLD_BOOTSTRAP
 	  /* During relocation all TLS symbols are defined and used.
 	     Therefore the offset is already correct.  */
 	  if (sym != NULL)
 	    *reloc_addr = sym->st_value + reloc->r_addend;
-# endif
+#  endif
 	  break;
+	case R_X86_64_TLSDESC:
+	  {
+	    struct tlsdesc volatile *td =
+	      (struct tlsdesc volatile *)reloc_addr;
+
+#  ifndef RTLD_BOOTSTRAP
+	    if (! sym)
+	      {
+		td->arg = (void*)reloc->r_addend;
+		td->entry = _dl_tlsdesc_undefweak;
+	      }
+	    else
+#  endif
+	      {
+#  ifndef RTLD_BOOTSTRAP
+#   ifndef SHARED
+		CHECK_STATIC_TLS (map, sym_map);
+#   else
+		if (!TRY_STATIC_TLS (map, sym_map))
+		  {
+		    td->arg = _dl_make_tlsdesc_dynamic
+		      (sym_map, sym->st_value + reloc->r_addend);
+		    td->entry = _dl_tlsdesc_dynamic;
+		  }
+		else
+#   endif
+#  endif
+		  {
+		    td->arg = (void*)(sym->st_value - sym_map->l_tls_offset
+				      + reloc->r_addend);
+		    td->entry = _dl_tlsdesc_return;
+		  }
+	      }
+	    break;
+	  }
 	case R_X86_64_TPOFF64:
 	  /* The offset is negative, forward from the thread pointer.  */
-# ifndef RTLD_BOOTSTRAP
+#  ifndef RTLD_BOOTSTRAP
 	  if (sym != NULL)
-# endif
+#  endif
 	    {
-# ifndef RTLD_BOOTSTRAP
+#  ifndef RTLD_BOOTSTRAP
 	      CHECK_STATIC_TLS (map, sym_map);
-# endif
+#  endif
 	      /* We know the offset of the object the symbol is contained in.
 		 It is a negative value which will be added to the
 		 thread pointer.  */
@@ -339,42 +386,43 @@ elf_machine_rela (struct link_map *map, const Elf64_Rela *reloc,
 			     - sym_map->l_tls_offset);
 	    }
 	  break;
-#endif
+# endif
 
-#ifndef RTLD_BOOTSTRAP
+# ifndef RTLD_BOOTSTRAP
 	case R_X86_64_64:
 	  *reloc_addr = value + reloc->r_addend;
 	  break;
 	case R_X86_64_32:
-	  *(unsigned int *) reloc_addr = value + reloc->r_addend;
-	  if (value + reloc->r_addend > UINT_MAX)
+	  value += reloc->r_addend;
+	  *(unsigned int *) reloc_addr = value;
+
+	  const char *fmt;
+	  if (__builtin_expect (value > UINT_MAX, 0))
 	    {
 	      const char *strtab;
 
+	      fmt = "\
+%s: Symbol `%s' causes overflow in R_X86_64_32 relocation\n";
+#  ifndef RESOLVE_CONFLICT_FIND_MAP
+	    print_err:
+#  endif
 	      strtab = (const char *) D_PTR (map, l_info[DT_STRTAB]);
 
-	      _dl_error_printf ("\
-%s: Symbol `%s' causes overflow in R_X86_64_32 relocation\n",
+	      _dl_error_printf (fmt,
 				rtld_progname ?: "<program name unknown>",
 				strtab + refsym->st_name);
 	    }
 	  break;
-# ifndef RESOLVE_CONFLICT_FIND_MAP
+#  ifndef RESOLVE_CONFLICT_FIND_MAP
 	  /* Not needed for dl-conflict.c.  */
 	case R_X86_64_PC32:
-	  *(unsigned int *) reloc_addr = value + reloc->r_addend
-	    - (Elf64_Addr) reloc_addr;
-	  if (value + reloc->r_addend - (Elf64_Addr) reloc_addr
-	      != (int)(value + reloc->r_addend - (Elf64_Addr) reloc_addr))
+	  value += reloc->r_addend - (Elf64_Addr) reloc_addr;
+	  *(unsigned int *) reloc_addr = value;
+	  if (__builtin_expect (value != (unsigned int) value, 0))
 	    {
-	      const char *strtab;
-
-	      strtab = (const char *) D_PTR (map, l_info[DT_STRTAB]);
-
-	      _dl_error_printf ("\
-%s: Symbol `%s' causes overflow in R_X86_64_PC32 relocation\n",
-				rtld_progname ?: "<program name unknown>",
-				strtab + refsym->st_name);
+	      fmt = "\
+%s: Symbol `%s' causes overflow in R_X86_64_PC32 relocation\n";
+	      goto print_err;
 	    }
 	  break;
 	case R_X86_64_COPY:
@@ -382,26 +430,22 @@ elf_machine_rela (struct link_map *map, const Elf64_Rela *reloc,
 	    /* This can happen in trace mode if an object could not be
 	       found.  */
 	    break;
+	  memcpy (reloc_addr_arg, (void *) value,
+		  MIN (sym->st_size, refsym->st_size));
 	  if (__builtin_expect (sym->st_size > refsym->st_size, 0)
 	      || (__builtin_expect (sym->st_size < refsym->st_size, 0)
 		  && GLRO(dl_verbose)))
 	    {
-	      const char *strtab;
-
-	      strtab = (const char *) D_PTR (map, l_info[DT_STRTAB]);
-	      _dl_error_printf ("\
-%s: Symbol `%s' has different size in shared object, consider re-linking\n",
-				rtld_progname ?: "<program name unknown>",
-				strtab + refsym->st_name);
+	      fmt = "\
+%s: Symbol `%s' has different size in shared object, consider re-linking\n";
+	      goto print_err;
 	    }
-	  memcpy (reloc_addr_arg, (void *) value,
-		  MIN (sym->st_size, refsym->st_size));
 	  break;
-# endif
+#  endif
 	default:
 	  _dl_reloc_bad_type (map, r_type, 0);
 	  break;
-#endif
+# endif
 	}
 #endif
     }
@@ -434,6 +478,15 @@ elf_machine_lazy_rel (struct link_map *map,
 	*reloc_addr =
 	  map->l_mach.plt
 	  + (((Elf64_Addr) reloc_addr) - map->l_mach.gotplt) * 2;
+    }
+  else if (__builtin_expect (r_type == R_X86_64_TLSDESC, 1))
+    {
+      struct tlsdesc volatile * __attribute__((__unused__)) td =
+	(struct tlsdesc volatile *)reloc_addr;
+
+      td->arg = (void*)reloc;
+      td->entry = (void*)(D_PTR (map, l_info[ADDRIDX (DT_TLSDESC_PLT)])
+			  + map->l_addr);
     }
   else
     _dl_reloc_bad_type (map, r_type, 1);

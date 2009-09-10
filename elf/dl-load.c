@@ -1,5 +1,5 @@
 /* Map in a shared object's segments from the file.
-   Copyright (C) 1995-2005, 2006, 2007  Free Software Foundation, Inc.
+   Copyright (C) 1995-2005, 2006, 2007, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -85,14 +85,6 @@
 
 #define STRING(x) __STRING (x)
 
-#ifdef MAP_ANON
-/* The fd is not examined when using MAP_ANON.  */
-# define ANONFD -1
-#else
-int _dl_zerofd = -1;
-# define ANONFD _dl_zerofd
-#endif
-
 /* Handle situations where we have a preferred location in memory for
    the shared objects.  */
 #ifdef ELF_PREFERRED_ADDRESS_DATA
@@ -163,7 +155,7 @@ static const size_t system_dirs_len[] =
 
 
 /* Local version of `strdup' function.  */
-static inline char *
+static char *
 local_strdup (const char *s)
 {
   size_t len = strlen (s) + 1;
@@ -941,7 +933,8 @@ _dl_map_object_from_fd (const char *name, int fd, struct filebuf *fbp,
     {
 #ifdef SHARED
       /* Auditing checkpoint: we are going to add new objects.  */
-      if (__builtin_expect (GLRO(dl_naudit) > 0, 0))
+      if ((mode & __RTLD_AUDIT) == 0
+	  && __builtin_expect (GLRO(dl_naudit) > 0, 0))
 	{
 	  struct link_map *head = GL(dl_ns)[nsid]._ns_loaded;
 	  /* Do not call the functions for any auditing object.  */
@@ -1311,7 +1304,7 @@ cannot allocate TLS data structures for initial thread");
 		caddr_t mapat;
 		mapat = __mmap ((caddr_t) zeropage, zeroend - zeropage,
 				c->prot, MAP_ANON|MAP_PRIVATE|MAP_FIXED,
-				ANONFD, 0);
+				-1, 0);
 		if (__builtin_expect (mapat == MAP_FAILED, 0))
 		  {
 		    errstring = N_("cannot map zero-fill pages");
@@ -1470,15 +1463,6 @@ cannot enable executable stack as shared object requires");
     {
       /* Create an appropriate searchlist.  It contains only this map.
 	 This is the definition of DT_SYMBOLIC in SysVr4.  */
-      l->l_symbolic_searchlist.r_list =
-	(struct link_map **) malloc (sizeof (struct link_map *));
-
-      if (l->l_symbolic_searchlist.r_list == NULL)
-	{
-	  errstring = N_("cannot create searchlist");
-	  goto call_lose_errno;
-	}
-
       l->l_symbolic_searchlist.r_list[0] = l;
       l->l_symbolic_searchlist.r_nlist = 1;
 
@@ -1583,6 +1567,8 @@ open_verify (const char *name, struct filebuf *fbp, struct link_map *loader,
 # define VALID_ELF_HEADER(hdr,exp,size)	(memcmp (hdr, exp, size) == 0)
 # define VALID_ELF_OSABI(osabi)		(osabi == ELFOSABI_SYSV)
 # define VALID_ELF_ABIVERSION(ver)	(ver == 0)
+#elif defined MORE_ELF_HEADER_DATA
+  MORE_ELF_HEADER_DATA;
 #endif
   static const unsigned char expected[EI_PAD] =
   {
@@ -1669,7 +1655,8 @@ open_verify (const char *name, struct filebuf *fbp, struct link_map *loader,
 						EI_PAD), 0))
 	{
 	  /* Something is wrong.  */
-	  if (*(Elf32_Word *) &ehdr->e_ident !=
+	  const Elf32_Word *magp = (const void *) ehdr->e_ident;
+	  if (*magp !=
 #if BYTE_ORDER == LITTLE_ENDIAN
 	      ((ELFMAG0 << (EI_MAG0 * 8)) |
 	       (ELFMAG1 << (EI_MAG1 * 8)) |
@@ -1973,7 +1960,7 @@ _dl_map_object (struct link_map *loader, const char *name, int preloaded,
   struct filebuf fb;
 
   assert (nsid >= 0);
-  assert (nsid < DL_NNS);
+  assert (nsid < GL(dl_nns));
 
   /* Look for this name among those already loaded.  */
   for (l = GL(dl_ns)[nsid]._ns_loaded; l; l = l->l_next)

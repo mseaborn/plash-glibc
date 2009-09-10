@@ -152,6 +152,7 @@ libc_hidden_proto (fread_unlocked)
 libc_hidden_proto (fwrite_unlocked)
 libc_hidden_proto (fgets_unlocked)
 libc_hidden_proto (fputs_unlocked)
+libc_hidden_proto (fmemopen)
 libc_hidden_proto (open_memstream)
 libc_hidden_proto (__libc_fatal)
 libc_hidden_proto (__vsprintf_chk)
@@ -160,17 +161,6 @@ libc_hidden_proto (__vfprintf_chk)
 libc_hidden_proto (__vasprintf_chk)
 libc_hidden_proto (__vdprintf_chk)
 libc_hidden_proto (__obstack_vprintf_chk)
-
-#  if !defined NOT_IN_libc && defined SHARED && defined DO_VERSIONING \
-  && !defined NO_HIDDEN
-/* Special gcc builtins.  */
-extern size_t __builtin_fwrite (const void *, size_t, size_t, void *)
-     __asm ("__GI_fwrite");
-extern size_t __builtin_fwrite_unlocked (const void *, size_t, size_t, void *)
-     __asm ("__GI_fwrite_unlocked");
-
-#  endif
-
 # endif
 
 #endif

@@ -1,3 +1,337 @@
+2009-04-27  Ulrich Drepper  <drepper@redhat.com>
+
+	* cancellation.c (__pthread_disable_asynccancel): Use THREAD_ATOMIC_AND
+	is available.
+	* libc-cancellation.c (__libc_disable_asynccancel): Likewise.
+	* sysdeps/x86_64/tls.h: Define THREAD_ATOMIC_AND.
+	* sysdeps/i386/tls.h: Likewise.
+	(tcbhead_t): Add __private_tm member.
+
+2009-04-26  Ulrich Drepper  <drepper@redhat.com>
+
+	* sem_open.c (sem_open): Rewrite initialization of initsem to
+	avoid warnings.
+
+	* sysdeps/unix/sysv/linux/libc_pthread_init.c (__libc_pthread_init):
+	Avoid warning by using may_alias attribute on ptrhack.
+
+2009-04-22  Ulrich Drepper  <drepper@redhat.com>
+
+	[BZ #10090]
+	* pthread_attr_setschedparam.c (__pthread_attr_setschedparam):
+	Check policy and priority for validity.
+	Patch mostly by Zhang Xiliang <zhangxiliang@cn.fujitsu.com>.
+
+2009-03-15  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/unix/sysv/linux/x86_64/pthread_cond_timedwait.S
+	(__pthread_cond_timedwait): Change to use cfi directives instead of
+	hand-coded unwind sections.
+
+2009-03-10  Ulrich Drepper  <drepper@redhat.com>
+
+	* init.c (nptl_freeres): Compile only for SHARED.
+
+2009-03-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* sysdeps/unix/sysv/linux/sparc/lowlevellock.h: Define
+	FUTEX_WAIT_BITSET, FUTEX_WAKE_BITSET, FUTEX_CLOCK_REALTIME and
+	FUTEX_BITSET_MATCH_ANY.
+
+2009-02-27  Roland McGrath  <roland@redhat.com>
+
+	* init.c (__nptl_initial_report_events): Mark __attribute_used__.
+	* pthread_create.c (__nptl_threads_events, __nptl_last_event): Likewise.
+
+2009-02-26  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/unix/sysv/linux/bits/posix_opt.h: Define
+	_POSIX_THREAD_ROBUST_PRIO_INHERIT and
+	_POSIX_THREAD_ROBUST_PRIO_PROTECT.  Reset value of macros from
+	200112L to 200809L.
+
+2009-02-25  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/pthread/pthread.h: The robust mutex functions are in
+	POSIX 2008.
+
+2009-02-24  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/unix/sysv/linux/bits/posix_opt.h (_BITS_POSIX_OPT_H):
+	Unify name of include protector macro.
+
+2009-02-14  SUGIOKA Toshinobu  <sugioka@itonet.co.jp>
+
+	* sysdeps/unix/sysv/linux/sh/lowlevellock.S: Define
+	LOAD_FUTEX_WAIT_ABS even if (FUTEX_WAIT == 0).
+
+2009-01-29  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/pthread/unwind-forcedunwind.c: Encrypt all function
+	pointer variables.
+
+	* allocatestack.c (__free_stacks): Renamed from free_stacks.
+	(__free_stack_cache): Removed.  Change callers to call __free_stacks.
+	* init.c (nptl_freeres): New function.
+	(pthread_functions): Initialize ptr_freeres to nptl_freeres.
+	* pthreadP.h: Don't declare __free_stack_cache.  Declare __free_stacks.
+	* sysdeps/pthread/unwind-forcedunwind.c (libgcc_s_handle): New
+	variable.
+	(pthread_cancel_init): Depend in libgcc_s_handle for decision to
+	load DSO.  Assign last.
+	(__unwind_freeres): New function.
+
+	* allocatestack.c (__reclaim_stacks): Reset in_flight_stack later
+	for better debugging.  No need to use stack_list_add here.
+
+2009-01-14  Kaz Kojima  <kkojima@rr.iij4u.or.jp>
+
+	* sysdeps/unix/sysv/linux/sh/lowlevellock.S
+	(__lll_timedlock_wait): Use FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME
+	instead of computing relative timeout.
+	* sysdeps/unix/sysv/linux/sh/lowlevellock.h: Define
+	FUTEX_CLOCK_REALTIME and FUTEX_BITSET_MATCH_ANY.
+
+2009-01-25  Ulrich Drepper  <drepper@redhat.com>
+
+	* pthread_mutex_lock.c (__pthread_mutex_lock): Remove unused label out.
+
+2009-01-08  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/pthread/list.h (list_add): Initialize new element first.
+	(list_add_tail): Removed.
+
+2009-01-07  Ulrich Drepper  <drepper@redhat.com>
+
+	* (in_flight_stack): New variable.
+	(stack_list_del): New function.  Use instead of list_del.
+	(stack_list_add): New function.  Use instead of list_add when adding to
+	stack_cache and stack_used lists.
+	(__reclaim_stacks): Complete operations on stack_cache and stack_used lists
+	when the fork call interrupted another thread.
+
+2009-01-04  Ulrich Drepper  <drepper@redhat.com>
+
+	* init.c (__pthread_initialize_minimal_internal): Optimize test
+	FUTEX_CLOCK_REALTIME a bit.
+
+2009-01-03  Ulrich Drepper  <drepper@redhat.com>
+
+	* init.c (__pthread_initialize_minimal_internal): Cheat a bit by
+	only passing five parameters to FUTEX_WAIT_BITSET call.
+
+	* sysdeps/unix/sysv/linux/i386/i486/lowlevellock.S
+	(__lll_timedlock_wait): Use FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME
+	instead of computing relative timeout.
+
+2009-01-02  Ulrich Drepper  <drepper@redhat.com>
+
+	* init.c (__pthread_initialize_minimal_internal): Check for
+	FUTEX_CLOCK_REALTIME flag.
+	* sysdeps/unix/sysv/linux/x86_64/lowlevellock.S (__lll_timedlock_wait):
+	Use FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME instead of computing
+	relative timeout.
+
+	* sysdeps/unix/sysv/linux/x86_64/lowlevellock.h: Define
+	FUTEX_CLOCK_REALTIME and FUTEX_BITSET_MATCH_ANY.
+	* sysdeps/unix/sysv/linux/i386/lowlevellock.h: Likewise.
+	* sysdeps/unix/sysv/linux/ia64/lowlevellock.h: Likewise.
+	* sysdeps/unix/sysv/linux/powerpc/lowlevellock.h: Likewise.
+	* sysdeps/unix/sysv/linux/s390/lowlevellock.h: Likewise.
+
+2008-12-09  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/pthread/pthread.h (pthread_cleanup_pop): Use { } as empty
+	loop body instead of ; to avoid gcc warnings.
+	(pthread_cleanup_pop_restore_np): Likewise.
+	Patch by Caolán McNamara <caolanm@redhat.com>.
+
+2008-12-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* pthread_mutex_lock.c (__pthread_mutex_lock): Handle only the
+	fast path here, for robust/PI/PP mutexes call
+	__pthread_mutex_lock_full.  Don't use switch, instead use a series
+	of ifs according to their probability.
+	(__pthread_mutex_lock_full): New function.
+	* pthread_mutex_unlock.c: Include assert.h.
+	(__pthread_mutex_unlock_usercnt): Handle only the
+	fast path here, for robust/PI/PP mutexes call
+	__pthread_mutex_unlock_full.  Don't use switch, instead use a series
+	of ifs according to their probability.
+	(__pthread_mutex_unlock_full): New function.
+	* sysdeps/unix/sysv/linux/pthread_mutex_cond_lock.c
+	(__pthread_mutex_lock_full): Define.
+
+2008-12-08  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/x86_64/tls.h (tcbhead_t): Add fields reserved for TM
+	implementation.  Add necessary padding and.
+	* descr.h (struct pthread): Increase padding for tcbhead_t to 24
+	words.
+
+2008-12-04  Kaz Kojima  <kkojima@rr.iij4u.or.jp>
+
+	* sysdeps/unix/sysv/linux/sh/lowlevellock.h: Define FUTEX_WAIT_BITSET
+	and FUTEX_WAKE_BITSET.
+
+2008-12-02  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/unix/sysv/linux/i386/lowlevellock.h: Define FUTEX_WAIT_BITSET
+	and FUTEX_WAKE_BITSET.
+	* sysdeps/unix/sysv/linux/ia64/lowlevellock.h: Likewise.
+	* sysdeps/unix/sysv/linux/powerpc/lowlevellock.h: Likewise.
+	* sysdeps/unix/sysv/linux/s390/lowlevellock.h: Likewise.
+	* sysdeps/unix/sysv/linux/x86_64/lowlevellock.h: Likewise.
+
+2008-11-25  Roland McGrath  <roland@redhat.com>
+
+	* sysdeps/alpha, sysdeps/unix/sysv/linux/alpha:
+	Subdirectories moved to ports repository as
+	sysdeps/.../nptl subdirectories.
+
+2008-11-12  Jakub Jelinek  <jakub@redhat.com>
+
+	[BZ #7008]
+	* pthread_condattr_setclock.c (pthread_condattr_setclock): Fix masking
+	of old value.
+	* pthread_cond_init.c (__pthread_cond_init): Fix
+	cond->__data.__nwaiters initialization.
+	* Makefile (tests): Add tst-cond23.
+	* tst-cond23.c: New test.
+
+2008-11-07  Jakub Jelinek  <jakub@redhat.com>
+
+	* sysdeps/pthread/malloc-machine.h (MALLOC): Adjust __libc_tsd_define
+	arguments.
+	(tsd_setspecific, tsd_getspecific): Adjust __libc_tsd_{set,get}
+	arguments.
+
+2008-11-01  Ulrich Drepper  <drepper@redhat.com>
+
+	[BZ #6955]
+	* pthread_mutex_lock.c: Add support for private PI mutexes.
+	* pthread_mutex_timedlock.c: Likewise.
+	* pthread_mutex_trylock.c: Likewise.
+	* pthread_mutex_unlock.c: Likewise.
+	Patch mostly by Ben Jackson <ben@ben.com>.
+
+2008-10-31  Ulrich Drepper  <drepper@redhat.com>
+
+	[BZ #6843]
+	* sysdeps/pthread/gai_misc.h (__gai_create_helper_thread):
+	Increase stack size for helper thread.
+
+2008-10-06  Martin Schwidefsky  <schwidefsky@de.ibm.com>
+
+	* sysdeps/s390/tls.h (THREAD_SET_STACK_GUARD): Add empty inline
+	assembly with a clobber list for access registers a0 and a1.
+
+2008-09-11  Martin Schwidefsky  <schwidefsky@de.ibm.com>
+
+	* sysdeps/unix/sysv/linux/fork.c (__libc_fork): Add memory barrier
+	to force runp->refcntr to be read from memory.
+
+2008-09-08  Richard Guenther  <rguenther@suse.de>
+
+	* sysdeps/unix/sysv/linux/i386/lowlevellock.h (lll_lock,
+	lll_robust_lock, lll_cond_lock, lll_robust_cond_lock,
+	lll_timedlock, lll_robust_timedlock, lll_unlock,
+	lll_robust_unlock): Promote private to int.
+
+2008-08-15  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/x86_64/pthreaddef.h: Remove ARCH_MAP_FLAGS and
+	ARCH_RETRY_MMAP definitions.
+	* allocatestack.c: Remove definition of ARCH_MAP_FLAGS.
+	Define MAP_STACK when not defined.
+	(allocate_stack): Use MAP_STACK instead of ARCH_MAP_FLAGS.  Remove
+	handling of ARCH_RETRY_MMAP.
+
+2008-07-30  Ulrich Drepper  <drepper@redhat.com>
+
+	* tst-align2.c (f): Print message that f is reached.
+
+2008-04-28  Hiroki Kaminaga  <kaminaga@sm.sony.co.jp>
+
+	[BZ #6740]
+	* sysdeps/powerpc/tcb-offsets.sym (PRIVATE_FUTEX_OFFSET): Guard symbol
+	definition with #ifndef __ASSUME_PRIVATE_FUTEX.
+
+2008-07-25  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/unix/sysv/linux/mq_notify.c (init_mq_netlink): Use
+	SOCK_CLOEXEC if possible.
+
+2008-05-29  Ulrich Drepper  <drepper@redhat.com>
+
+	* Makefile (tests): Add tst-rwlock2a.
+	* tst-rwlock2.c: Use TYPE macro to decide what rwlock type to use.
+	* tst-rwlock2a.c: New file.
+
+2008-06-12  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/pthread/pthread.h: Remove inadvertant checkin.
+
+2008-05-17  Samuel Thibault  <samuel.thibault@ens-lyon.org>
+
+	* sysdeps/pthread/pthread.h: Fix typo in comment.
+
+2008-05-28  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/pthread/createthread.c (do_clone): Pass accurate length
+	of CPU set to the kernel.
+
+2008-05-23  Paul Pluzhnikov  <ppluzhnikov@google.com>
+
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_barrier_wait.S: Add
+	cfi directives.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_cond_broadcast.S: Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_cond_signal.S: Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_rdlock.S: Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_unlock.S: Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_wrlock.S: Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/sem_post.S: Likewise.
+
+2008-05-22  Paul Pluzhnikov  <ppluzhnikov@google.com>
+
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_timedrdlock.S: Add
+	cfi directives.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_timedwrlock.S:
+	Likewise.
+	* sysdeps/unix/sysv/linux/x86_64/pthread_rwlock_timedrdlock.S:
+	Likewise.
+	* sysdeps/unix/sysv/linux/x86_64/pthread_rwlock_timedwrlock.S:
+	Likewise.
+
+2008-05-26  Ulrich Drepper  <drepper@redhat.com>
+
+	* tst-typesizes.c: Explicitly check __SIZEOF_PTHREAD_* constants.
+
+2008-05-20  Jakub Jelinek  <jakub@redhat.com>
+
+	David S. Miller  <davem@davemloft.net>
+
+	* sysdeps/unix/sysv/linux/sparc/sparc64/Makefile: New file.
+
+2008-05-10  Ulrich Drepper  <drepper@redhat.com>
+
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_rdlock.S: Access
+	__pshared correctly.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_timedrdlock.S:
+	Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_timedwrlock.S:
+	Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_unlock.S:
+	Likewise.
+	* sysdeps/unix/sysv/linux/i386/i486/pthread_rwlock_wrlock.S:
+	Likewise.
+	Reported by Clemens Kolbitsch <clemens.kol@gmx.at>.
+
+2008-04-14  David S. Miller  <davem@davemloft.net>
+
+	* sysdeps/unix/sysv/linux/sparc/sparc32/sem_wait.c
+	(__old_sem_wait): Fix argument to lll_futex_wait().
+
 2007-11-26  Daniel Jacobowitz  <dan@codesourcery.com>
 
 	* pthread_create.c: Require pthread_mutex_trylock and
@@ -12,7 +346,7 @@
 
 2008-03-27  Ulrich Drepper  <drepper@redhat.com>
 
-	* sysdeps/unix/sysv/linux/bits/local_lim.h: Undefined ARG_MAX if
+	* sysdeps/unix/sysv/linux/bits/local_lim.h: Undefine ARG_MAX if
 	<linux/limits.h> has defined it.
 	* sysdeps/unix/sysv/linux/alpha/bits/local_lim.h: Likewise.
 	* sysdeps/unix/sysv/linux/ia64/bits/local_lim.h: Likewise.

@@ -1,5 +1,5 @@
 /* This file defines standard ELF types, structures, and macros.
-   Copyright (C) 1995-2003,2004,2005,2006,2007,2008
+   Copyright (C) 1995-2003,2004,2005,2006,2007,2008,2009
 	Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -459,6 +459,7 @@ typedef struct
 #define STT_TLS		6		/* Symbol is thread-local data object*/
 #define	STT_NUM		7		/* Number of defined types.  */
 #define STT_LOOS	10		/* Start of OS-specific */
+#define STT_GNU_IFUNC	10		/* Symbol is indirect code object */
 #define STT_HIOS	12		/* End of OS-specific */
 #define STT_LOPROC	13		/* Start of processor-specific */
 #define STT_HIPROC	15		/* End of processor-specific */
@@ -608,7 +609,9 @@ typedef struct
 #define NT_PRXFPREG	0x46e62b7f	/* Contains copy of user_fxsr_struct */
 #define NT_PPC_VMX	0x100		/* PowerPC Altivec/VMX registers */
 #define NT_PPC_SPE	0x101		/* PowerPC SPE/EVR registers */
+#define NT_PPC_VSX	0x102		/* PowerPC VSX registers */
 #define NT_386_TLS	0x200		/* i386 TLS slots (struct user_desc) */
+#define NT_386_IOPERM	0x201		/* x86 io permission bitmap (1=deny) */
 
 /* Legal values for the note segment descriptor types for object files.  */
 
@@ -970,6 +973,12 @@ typedef struct
 
 #define	AT_SECURE	23		/* Boolean, was exec setuid-like?  */
 
+#define AT_BASE_PLATFORM 24		/* String identifying real platforms.*/
+
+#define AT_RANDOM	25		/* Address of 16 random bytes.  */
+
+#define AT_EXECFN	31		/* Filename of executable.  */
+
 /* Pointer to the global system page used for system calls and other
    nice things.  */
 #define AT_SYSINFO	32
@@ -1159,8 +1168,17 @@ typedef struct
 #define R_386_TLS_DTPMOD32 35		/* ID of module containing symbol */
 #define R_386_TLS_DTPOFF32 36		/* Offset in TLS block */
 #define R_386_TLS_TPOFF32  37		/* Negated offset in static TLS block */
+/* 38? */
+#define R_386_TLS_GOTDESC  39		/* GOT offset for TLS descriptor.  */
+#define R_386_TLS_DESC_CALL 40		/* Marker of call through TLS
+					   descriptor for
+					   relaxation.  */
+#define R_386_TLS_DESC     41		/* TLS descriptor containing
+					   pointer to code and to
+					   argument, returning the TLS
+					   offset for the symbol.  */
 /* Keep this the last entry.  */
-#define R_386_NUM	   38
+#define R_386_NUM	   42
 
 /* SUN SPARC specific definitions.  */
 
@@ -1228,6 +1246,7 @@ typedef struct
 #define R_SPARC_PC_LM22		39	/* Low miggle 22 bits of ... */
 #define R_SPARC_WDISP16		40	/* PC relative 16 bit shifted */
 #define R_SPARC_WDISP19		41	/* PC relative 19 bit shifted */
+#define R_SPARC_GLOB_JMP	42	/* was part of v9 ABI but was removed */
 #define R_SPARC_7		43	/* Direct 7 bit */
 #define R_SPARC_5		44	/* Direct 5 bit */
 #define R_SPARC_6		45	/* Direct 6 bit */
@@ -1265,8 +1284,19 @@ typedef struct
 #define R_SPARC_TLS_DTPOFF64	77
 #define R_SPARC_TLS_TPOFF32	78
 #define R_SPARC_TLS_TPOFF64	79
+#define R_SPARC_GOTDATA_HIX22	80
+#define R_SPARC_GOTDATA_LOX10	81
+#define R_SPARC_GOTDATA_OP_HIX22	82
+#define R_SPARC_GOTDATA_OP_LOX10	83
+#define R_SPARC_GOTDATA_OP	84
+#define R_SPARC_H34		85
+#define R_SPARC_SIZE32		86
+#define R_SPARC_SIZE64		87
+#define R_SPARC_GNU_VTINHERIT	250
+#define R_SPARC_GNU_VTENTRY	251
+#define R_SPARC_REV32		252
 /* Keep this the last entry.  */
-#define R_SPARC_NUM		80
+#define R_SPARC_NUM		253
 
 /* For Sparc64, legal values for d_tag of Elf64_Dyn.  */
 
@@ -1386,6 +1416,7 @@ typedef struct
 #define STO_MIPS_INTERNAL		0x1
 #define STO_MIPS_HIDDEN			0x2
 #define STO_MIPS_PROTECTED		0x3
+#define STO_MIPS_PLT			0x8
 #define STO_MIPS_SC_ALIGN_UNUSED	0xff
 
 /* MIPS specific values for `st_info'.  */
@@ -1532,8 +1563,10 @@ typedef struct
 #define R_MIPS_TLS_TPREL_HI16	49	/* TP-relative offset, high 16 bits */
 #define R_MIPS_TLS_TPREL_LO16	50	/* TP-relative offset, low 16 bits */
 #define R_MIPS_GLOB_DAT		51
+#define R_MIPS_COPY		126
+#define R_MIPS_JUMP_SLOT        127
 /* Keep this the last entry.  */
-#define R_MIPS_NUM		52
+#define R_MIPS_NUM		128
 
 /* Legal values for p_type field of Elf32_Phdr.  */
 
@@ -1599,7 +1632,13 @@ typedef struct
 #define DT_MIPS_COMPACT_SIZE 0x7000002f /* (O32)Size of compact rel section. */
 #define DT_MIPS_GP_VALUE     0x70000030 /* GP value for aux GOTs.  */
 #define DT_MIPS_AUX_DYNAMIC  0x70000031 /* Address of aux .dynamic.  */
-#define DT_MIPS_NUM	     0x32
+/* The address of .got.plt in an executable using the new non-PIC ABI.  */
+#define DT_MIPS_PLTGOT	     0x70000032
+/* The base of the PLT in an executable using the new non-PIC ABI if that
+   PLT is writable.  For a non-writable PLT, this is omitted or has a zero
+   value.  */
+#define DT_MIPS_RWPLT        0x70000034
+#define DT_MIPS_NUM	     0x35
 
 /* Legal values for DT_MIPS_FLAGS Elf32_Dyn entry.  */
 
@@ -2166,42 +2205,62 @@ typedef Elf32_Addr Elf32_Conflict;
 /* ARM specific declarations */
 
 /* Processor specific flags for the ELF header e_flags field.  */
-#define EF_ARM_RELEXEC     0x01
-#define EF_ARM_HASENTRY    0x02
-#define EF_ARM_INTERWORK   0x04
-#define EF_ARM_APCS_26     0x08
-#define EF_ARM_APCS_FLOAT  0x10
-#define EF_ARM_PIC         0x20
-#define EF_ARM_ALIGN8      0x40		/* 8-bit structure alignment is in use */
-#define EF_ARM_NEW_ABI     0x80
-#define EF_ARM_OLD_ABI     0x100
+#define EF_ARM_RELEXEC		0x01
+#define EF_ARM_HASENTRY		0x02
+#define EF_ARM_INTERWORK	0x04
+#define EF_ARM_APCS_26		0x08
+#define EF_ARM_APCS_FLOAT	0x10
+#define EF_ARM_PIC		0x20
+#define EF_ARM_ALIGN8		0x40 /* 8-bit structure alignment is in use */
+#define EF_ARM_NEW_ABI		0x80
+#define EF_ARM_OLD_ABI		0x100
+#define EF_ARM_SOFT_FLOAT	0x200
+#define EF_ARM_VFP_FLOAT	0x400
+#define EF_ARM_MAVERICK_FLOAT	0x800
+
 
 /* Other constants defined in the ARM ELF spec. version B-01.  */
 /* NB. These conflict with values defined above.  */
 #define EF_ARM_SYMSARESORTED	0x04
-#define EF_ARM_DYNSYMSUSESEGIDX 0x08
+#define EF_ARM_DYNSYMSUSESEGIDX	0x08
 #define EF_ARM_MAPSYMSFIRST	0x10
 #define EF_ARM_EABIMASK		0XFF000000
 
-#define EF_ARM_EABI_VERSION(flags) ((flags) & EF_ARM_EABIMASK)
-#define EF_ARM_EABI_UNKNOWN  0x00000000
-#define EF_ARM_EABI_VER1     0x01000000
-#define EF_ARM_EABI_VER2     0x02000000
+/* Constants defined in AAELF.  */
+#define EF_ARM_BE8	    0x00800000
+#define EF_ARM_LE8	    0x00400000
 
-/* Additional symbol types for Thumb */
-#define STT_ARM_TFUNC      0xd
+#define EF_ARM_EABI_VERSION(flags)	((flags) & EF_ARM_EABIMASK)
+#define EF_ARM_EABI_UNKNOWN	0x00000000
+#define EF_ARM_EABI_VER1	0x01000000
+#define EF_ARM_EABI_VER2	0x02000000
+#define EF_ARM_EABI_VER3	0x03000000
+#define EF_ARM_EABI_VER4	0x04000000
+#define EF_ARM_EABI_VER5	0x05000000
+
+/* Additional symbol types for Thumb.  */
+#define STT_ARM_TFUNC		STT_LOPROC /* A Thumb function.  */
+#define STT_ARM_16BIT		STT_HIPROC /* A Thumb label.  */
 
 /* ARM-specific values for sh_flags */
-#define SHF_ARM_ENTRYSECT  0x10000000   /* Section contains an entry point */
-#define SHF_ARM_COMDEF     0x80000000   /* Section may be multiply defined
-					   in the input to a link step */
+#define SHF_ARM_ENTRYSECT	0x10000000 /* Section contains an entry point */
+#define SHF_ARM_COMDEF		0x80000000 /* Section may be multiply defined
+					      in the input to a link step.  */
 
 /* ARM-specific program header flags */
-#define PF_ARM_SB          0x10000000   /* Segment contains the location
-					   addressed by the static base */
+#define PF_ARM_SB		0x10000000 /* Segment contains the location
+					      addressed by the static base. */
+#define PF_ARM_PI		0x20000000 /* Position-independent segment.  */
+#define PF_ARM_ABS		0x40000000 /* Absolute segment.  */
 
 /* Processor specific values for the Phdr p_type field.  */
-#define PT_ARM_EXIDX	0x70000001	/* .ARM.exidx segment */
+#define PT_ARM_EXIDX		(PT_LOPROC + 1)	/* ARM unwind segment.  */
+
+/* Processor specific values for the Shdr sh_type field.  */
+#define SHT_ARM_EXIDX		(SHT_LOPROC + 1) /* ARM unwind section.  */
+#define SHT_ARM_PREEMPTMAP	(SHT_LOPROC + 2) /* Preemption details.  */
+#define SHT_ARM_ATTRIBUTES	(SHT_LOPROC + 3) /* ARM attributes section.  */
+
 
 /* ARM relocs.  */
 
@@ -2557,8 +2616,17 @@ typedef Elf32_Addr Elf32_Conflict;
 #define R_X86_64_GOTTPOFF	22	/* 32 bit signed PC relative offset
 					   to GOT entry for IE symbol */
 #define R_X86_64_TPOFF32	23	/* Offset in initial TLS block */
+#define R_X86_64_PC64		24	/* PC relative 64 bit */
+#define R_X86_64_GOTOFF64	25	/* 64 bit offset to GOT */
+#define R_X86_64_GOTPC32	26	/* 32 bit signed pc relative
+					   offset to GOT */
+/* 27 .. 33 */
+#define R_X86_64_GOTPC32_TLSDESC 34	/* GOT offset for TLS descriptor.  */
+#define R_X86_64_TLSDESC_CALL   35	/* Marker for call through TLS
+					   descriptor.  */
+#define R_X86_64_TLSDESC        36	/* TLS descriptor.  */
 
-#define R_X86_64_NUM		24
+#define R_X86_64_NUM		37
 
 
 /* AM33 relocations.  */

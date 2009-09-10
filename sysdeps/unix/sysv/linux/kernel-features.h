@@ -1,6 +1,6 @@
 /* Set flags signalling availability of kernel features based on given
    kernel version number.
-   Copyright (C) 1999-2006, 2007 Free Software Foundation, Inc.
+   Copyright (C) 1999-2006, 2007, 2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -462,6 +462,13 @@
 # define __ASSUME_SET_ROBUST_LIST	1
 #endif
 
+/* Pessimistically assume that 2.6.18 introduced real handling of
+   large numbers of requests to readv and writev and that we don't
+   need a fallback.  It likely worked for much longer.  */
+#if __LINUX_KERNEL_VERSION >= 0x020612
+# define __ASSUME_COMPLETE_READV_WRITEV	1
+#endif
+
 /* Support for PI futexes was added in 2.6.18.  */
 #if __LINUX_KERNEL_VERSION >= 0x020612
 # define __ASSUME_FUTEX_LOCK_PI	1
@@ -488,7 +495,48 @@
 # define __ASSUME_FALLOCATE	1
 #endif
 
+/* Support for various CLOEXEC and NONBLOCK flags was added for x86,
+   x86-64, PPC, IA-64, SPARC< and S390 in 2.6.23.  */
+#if __LINUX_KERNEL_VERSION >= 0x020617 \
+    && (defined __i386__ || defined __x86_64__ || defined __powerpc__ \
+	|| defined __ia64__ || defined __sparc__ || defined __s390__)
+# define __ASSUME_O_CLOEXEC	1
+#endif
+
 /* Support for ADJ_OFFSET_SS_READ was added in 2.6.24.  */
 #if __LINUX_KERNEL_VERSION >= 0x020618
 # define __ASSUME_ADJ_OFFSET_SS_READ	1
+#endif
+
+/* Support for various CLOEXEC and NONBLOCK flags was added for x86,
+   x86-64, PPC, IA-64, and SPARC in 2.6.27.  */
+#if __LINUX_KERNEL_VERSION >= 0x02061b \
+    && (defined __i386__ || defined __x86_64__ || defined __powerpc__ \
+	|| defined __ia64__ || defined __sparc__ || defined __s390__)
+# define __ASSUME_SOCK_CLOEXEC	1
+# define __ASSUME_IN_NONBLOCK	1
+# define __ASSUME_PIPE2		1
+#endif
+
+/* Support for the accept4 syscall was added in 2.6.28.  */
+#if __LINUX_KERNEL_VERSION >= 0x02061c \
+    && (defined __i386__ || defined __x86_64__ || defined __powerpc__ \
+	|| defined __ia64__ || defined __sparc__ || defined __s390__)
+# define __ASSUME_ACCEPT4	1
+#endif
+
+/* Support for the FUTEX_CLOCK_REALTIME flag was added in 2.6.29.  */
+#if __LINUX_KERNEL_VERSION >= 0x02061d
+# define __ASSUME_FUTEX_CLOCK_REALTIME	1
+#endif
+
+/* Support for the AT_RANDOM auxiliary vector entry was added in 2.6.29.  */
+#if __LINUX_KERNEL_VERSION >= 0x02061d
+# define __ASSUME_AT_RANDOM	1
+#endif
+
+/* Support for preadv and pwritev was added in 2.6.30.  */
+#if __LINUX_KERNEL_VERSION >= 0x02061e
+# define __ASSUME_PREADV	1
+# define __ASSUME_PWRITEV	1
 #endif

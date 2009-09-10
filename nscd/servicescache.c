@@ -1,5 +1,5 @@
 /* Cache handling for services lookup.
-   Copyright (C) 2007 Free Software Foundation, Inc.
+   Copyright (C) 2007, 2008, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Ulrich Drepper <drepper@drepper.com>, 2007.
 
@@ -64,7 +64,7 @@ static const serv_response_header notfound =
 static void
 cache_addserv (struct database_dyn *db, int fd, request_header *req,
 	       const void *key, struct servent *serv, uid_t owner,
-	       struct hashentry *he, struct datahead *dh, int errval)
+	       struct hashentry *const he, struct datahead *dh, int errval)
 {
   ssize_t total;
   ssize_t written;
@@ -103,7 +103,8 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
 	  written = TEMP_FAILURE_RETRY (send (fd, &notfound, total,
 					      MSG_NOSIGNAL));
 
-	  dataset = mempool_alloc (db, sizeof (struct dataset) + req->key_len);
+	  dataset = mempool_alloc (db, sizeof (struct dataset) + req->key_len,
+				   1);
 	  /* If we cannot permanently store the result, so be it.  */
 	  if (dataset != NULL)
 	    {
@@ -132,13 +133,8 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
 			 + sizeof (struct dataset) + req->key_len, MS_ASYNC);
 		}
 
-	      /* Now get the lock to safely insert the records.  */
-	      pthread_rwlock_rdlock (&db->lock);
-
-	      if (cache_add (req->type, &dataset->strdata, req->key_len,
-			     &dataset->head, true, db, owner) < 0)
-		/* Ensure the data can be recovered.  */
-		dataset->head.usable = false;
+	      (void) cache_add (req->type, &dataset->strdata, req->key_len,
+				&dataset->head, true, db, owner, he == NULL);
 
 	      pthread_rwlock_unlock (&db->lock);
 
@@ -146,8 +142,6 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
 	      if (dh != NULL)
 		dh->usable = false;
 	    }
-	  else
-	    ++db->head->addfailed;
 	}
     }
   else
@@ -174,7 +168,7 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
 	  total += s_aliases_len[cnt];
 	}
 
-      total += (sizeof (struct dataset)
+      total += (offsetof (struct dataset, strdata)
 		+ s_name_len
 		+ s_proto_len
 		+ s_aliases_cnt * sizeof (uint32_t));
@@ -188,12 +182,8 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
       dataset = NULL;
 
       if (he == NULL)
-	{
-	  dataset = (struct dataset *) mempool_alloc (db,
-						      total + req->key_len);
-	  if (dataset == NULL)
-	    ++db->head->addfailed;
-	}
+	dataset = (struct dataset *) mempool_alloc (db, total + req->key_len,
+						    1);
 
       if (dataset == NULL)
 	{
@@ -261,7 +251,8 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
 	      /* We have to create a new record.  Just allocate
 		 appropriate memory and copy it.  */
 	      struct dataset *newp
-		= (struct dataset *) mempool_alloc (db, total + req->key_len);
+		= (struct dataset *) mempool_alloc (db, total + req->key_len,
+						    1);
 	      if (newp != NULL)
 		{
 		  /* Adjust pointers into the memory block.  */
@@ -272,8 +263,6 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
 		  dataset = memcpy (newp, dataset, total + req->key_len);
 		  alloca_used = false;
 		}
-	      else
-		++db->head->addfailed;
 
 	      /* Mark the old record as obsolete.  */
 	      dh->usable = false;
@@ -326,14 +315,8 @@ cache_addserv (struct database_dyn *db, int fd, request_header *req,
 		     + total + req->key_len, MS_ASYNC);
 	    }
 
-	  /* Now get the lock to safely insert the records.  */
-	  pthread_rwlock_rdlock (&db->lock);
-
-	  if (cache_add (req->type, key_copy, req->key_len,
-			 &dataset->head, true, db, owner) < 0)
-	    /* Could not allocate memory.  Make sure the
-	       data gets discarded.  */
-	    dataset->head.usable = false;
+	  (void) cache_add (req->type, key_copy, req->key_len,
+			    &dataset->head, true, db, owner, he == NULL);
 
 	  pthread_rwlock_unlock (&db->lock);
 	}
