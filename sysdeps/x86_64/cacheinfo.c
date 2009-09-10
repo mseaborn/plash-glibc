@@ -23,6 +23,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#ifdef USE_MULTIARCH
+# include "multiarch/init-arch.h"
+#endif
+
 static const struct intel_02_cache_info
 {
   unsigned int idx;
@@ -34,8 +38,11 @@ static const struct intel_02_cache_info
   {
     { 0x06, _SC_LEVEL1_ICACHE_SIZE,    8192,  4, 32 },
     { 0x08, _SC_LEVEL1_ICACHE_SIZE,   16384,  4, 32 },
+    { 0x09, _SC_LEVEL1_ICACHE_SIZE,   32768,  4, 32 },
     { 0x0a, _SC_LEVEL1_DCACHE_SIZE,    8192,  2, 32 },
     { 0x0c, _SC_LEVEL1_DCACHE_SIZE,   16384,  4, 32 },
+    { 0x0d, _SC_LEVEL1_DCACHE_SIZE,   16384,  4, 64 },
+    { 0x21, _SC_LEVEL2_CACHE_SIZE,   262144,  8, 64 },
     { 0x22, _SC_LEVEL3_CACHE_SIZE,   524288,  4, 64 },
     { 0x23, _SC_LEVEL3_CACHE_SIZE,  1048576,  8, 64 },
     { 0x25, _SC_LEVEL3_CACHE_SIZE,  2097152,  8, 64 },
@@ -80,6 +87,18 @@ static const struct intel_02_cache_info
     { 0x85, _SC_LEVEL2_CACHE_SIZE,  2097152,  8, 32 },
     { 0x86, _SC_LEVEL2_CACHE_SIZE,   524288,  4, 64 },
     { 0x87, _SC_LEVEL2_CACHE_SIZE,  1048576,  8, 64 },
+    { 0xd0, _SC_LEVEL3_CACHE_SIZE,   524288,  4, 64 },
+    { 0xd1, _SC_LEVEL3_CACHE_SIZE,  1048576,  4, 64 },
+    { 0xd2, _SC_LEVEL3_CACHE_SIZE,  2097152,  4, 64 },
+    { 0xd6, _SC_LEVEL3_CACHE_SIZE,  1048576,  8, 64 },
+    { 0xd7, _SC_LEVEL3_CACHE_SIZE,  2097152,  8, 64 },
+    { 0xd8, _SC_LEVEL3_CACHE_SIZE,  4194304,  8, 64 },
+    { 0xdc, _SC_LEVEL3_CACHE_SIZE,  2097152, 12, 64 },
+    { 0xdd, _SC_LEVEL3_CACHE_SIZE,  4194304, 12, 64 },
+    { 0xde, _SC_LEVEL3_CACHE_SIZE,  8388608, 12, 64 },
+    { 0xe3, _SC_LEVEL3_CACHE_SIZE,  2097152, 16, 64 },
+    { 0xe3, _SC_LEVEL3_CACHE_SIZE,  4194304, 16, 64 },
+    { 0xe4, _SC_LEVEL3_CACHE_SIZE,  8388608, 16, 64 },
   };
 
 #define nintel_02_known (sizeof (intel_02_known) / sizeof (intel_02_known [0]))
@@ -429,19 +448,32 @@ init_cacheinfo (void)
   unsigned int ebx;
   unsigned int ecx;
   unsigned int edx;
-  int max_cpuid;
   int max_cpuid_ex;
   long int data = -1;
   long int shared = -1;
   unsigned int level;
   unsigned int threads = 0;
 
+#ifdef USE_MULTIARCH
+  if (__cpu_features.kind == arch_kind_unknown)
+    __init_cpu_features ();
+# define is_intel __cpu_features.kind == arch_kind_intel
+# define is_amd __cpu_features.kind == arch_kind_amd
+# define max_cpuid __cpu_features.max_cpuid
+#else
+  int max_cpuid;
   asm volatile ("cpuid"
 		: "=a" (max_cpuid), "=b" (ebx), "=c" (ecx), "=d" (edx)
 		: "0" (0));
-
   /* This spells out "GenuineIntel".  */
-  if (ebx == 0x756e6547 && ecx == 0x6c65746e && edx == 0x49656e69)
+# define is_intel \
+  ebx == 0x756e6547 && ecx == 0x6c65746e && edx == 0x49656e69
+  /* This spells out "AuthenticAMD".  */
+# define is_amd \
+  ebx == 0x68747541 && ecx == 0x444d4163 && edx == 0x69746e65
+#endif
+
+  if (is_intel)
     {
       data = handle_intel (_SC_LEVEL1_DCACHE_SIZE, max_cpuid);
 
@@ -456,9 +488,16 @@ init_cacheinfo (void)
           shared = handle_intel (_SC_LEVEL2_CACHE_SIZE, max_cpuid);
 	}
 
+#ifdef USE_MULTIARCH
+      eax = __cpu_features.cpuid[INTEL_CPUID_INDEX_1].eax;
+      ebx = __cpu_features.cpuid[INTEL_CPUID_INDEX_1].ebx;
+      ecx = __cpu_features.cpuid[INTEL_CPUID_INDEX_1].ecx;
+      edx = __cpu_features.cpuid[INTEL_CPUID_INDEX_1].edx;
+#else
       asm volatile ("cpuid"
 		    : "=a" (eax), "=b" (ebx), "=c" (ecx), "=d" (edx)
 		    : "0" (1));
+#endif
 
       /* Intel prefers SSSE3 instructions for memory/string routines
 	 if they are avaiable.  */
@@ -505,7 +544,7 @@ init_cacheinfo (void)
         shared /= threads;
     }
   /* This spells out "AuthenticAMD".  */
-  else if (ebx == 0x68747541 && ecx == 0x444d4163 && edx == 0x69746e65)
+  else if (is_amd)
     {
       data   = handle_amd (_SC_LEVEL1_DCACHE_SIZE);
       long int core = handle_amd (_SC_LEVEL2_CACHE_SIZE);

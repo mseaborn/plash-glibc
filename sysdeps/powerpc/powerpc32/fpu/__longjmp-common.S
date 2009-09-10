@@ -1,5 +1,5 @@
 /* longjmp for PowerPC.
-   Copyright (C) 1995-99, 2000, 2003-2005, 2006 Free Software Foundation, Inc.
+   Copyright (C) 1995-99, 2000, 2003-2006, 2009 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -47,16 +47,16 @@ ENTRY (BP_SYM (__longjmp))
 	lwz     r5,_rtld_global_ro@got(r5)
 	mtlr    r6
 	cfi_same_value (lr)
-	lwz     r5,RTLD_GLOBAL_RO_DL_HWCAP_OFFSET(r5)
+	lwz     r5,RTLD_GLOBAL_RO_DL_HWCAP_OFFSET+4(r5)
 #  else
 	lwz     r5,_dl_hwcap@got(r5)
 	mtlr    r6
 	cfi_same_value (lr)
-	lwz     r5,0(r5)
+	lwz     r5,4(r5)
 #  endif
 # else
-	lis	r5,_dl_hwcap@ha
-	lwz     r5,_dl_hwcap@l(r5)
+	lis	r5,(_dl_hwcap+4)@ha
+	lwz     r5,(_dl_hwcap+4)@l(r5)
 # endif
 	andis.	r5,r5,(PPC_FEATURE_HAS_ALTIVEC >> 16)
 	beq	L(no_vmx)
@@ -64,7 +64,7 @@ ENTRY (BP_SYM (__longjmp))
 	andi.	r6,r5,0xf
 	lwz	r0,((JB_VRSAVE)*4)(3)
 	mtspr	VRSAVE,r0
-	beq+	aligned_restore_vmx
+	beq+	L(aligned_restore_vmx)
 	addi    r6,r5,16
 	lvsl	v0,0,r5
 	lvx	v1,0,r5
@@ -88,7 +88,7 @@ ENTRY (BP_SYM (__longjmp))
 	lvx	v1,0,r5
 	vperm   v31,v31,v1,v0
 	b       L(no_vmx)
-aligned_restore_vmx:
+L(aligned_restore_vmx):
 	addi	r6,r5,16
 	lvx	v20,0,r5
 	addi	r5,r5,32
