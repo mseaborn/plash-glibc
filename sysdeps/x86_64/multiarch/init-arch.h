@@ -1,5 +1,5 @@
 /* This file is part of the GNU C Library.
-   Copyright (C) 2008 Free Software Foundation, Inc.
+   Copyright (C) 2008, 2009 Free Software Foundation, Inc.
 
    The GNU C Library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Lesser General Public
@@ -20,16 +20,9 @@
 
 enum
   {
-    INTEL_CPUID_INDEX_1 = 0,
+    COMMON_CPUID_INDEX_1 = 0,
     /* Keep the following line at the end.  */
-    INTEL_CPUID_INDEX_MAX
-  };
-
-enum
-  {
-    AMD_CPUID_INDEX_1 = 0,
-    /* Keep the following line at the end.  */
-    AMD_CPUID_INDEX_MAX
+    COMMON_CPUID_INDEX_MAX
   };
 
 extern struct cpu_features
@@ -42,13 +35,15 @@ extern struct cpu_features
       arch_kind_other
     } kind;
   int max_cpuid;
-  struct
+  struct cpuid_registers
   {
     unsigned int eax;
     unsigned int ebx;
     unsigned int ecx;
     unsigned int edx;
-  } cpuid[MAX (INTEL_CPUID_INDEX_MAX, AMD_CPUID_INDEX_MAX)];
+  } cpuid[COMMON_CPUID_INDEX_MAX];
+  unsigned int family;
+  unsigned int model;
 } __cpu_features attribute_hidden;
 
 
@@ -59,12 +54,20 @@ extern void __init_cpu_features (void) attribute_hidden;
       __init_cpu_features ();				\
   while (0)
 
+/* Used from outside libc.so to get access to the CPU features structure.  */
+extern const struct cpu_features *__get_cpu_features (void)
+     __attribute__ ((const));
+
+#ifndef NOT_IN_libc
+# define __get_cpu_features()	(&__cpu_features)
+#endif
+
+#define HAS_CPU_FEATURE(idx, reg, bit) \
+  ((__get_cpu_features ()->cpuid[idx].reg & (1 << (bit))) != 0)
+
 /* Following are the feature tests used throughout libc.  */
 
-#define INTEL_HAS_POPCOUNT \
-  (__cpu_features.kind == arch_kind_intel				\
-   && (__cpu_features.cpuid[INTEL_CPUID_INDEX_1].ecx & (1 << 23)) != 0)
-
-#define AMD_HAS_POPCOUNT \
-  (__cpu_features.kind == arch_kind_amd				\
-   && (__cpu_features.cpuid[AMD_CPUID_INDEX_1].ecx & (1 << 23)) != 0)
+#define HAS_SSE2	HAS_CPU_FEATURE (COMMON_CPUID_INDEX_1, edx, 26)
+#define HAS_POPCOUNT	HAS_CPU_FEATURE (COMMON_CPUID_INDEX_1, ecx, 23)
+#define HAS_SSE4_2	HAS_CPU_FEATURE (COMMON_CPUID_INDEX_1, ecx, 20)
+#define HAS_FMA		HAS_CPU_FEATURE (COMMON_CPUID_INDEX_1, ecx, 12)

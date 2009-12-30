@@ -1,5 +1,5 @@
 /* O_*, F_*, FD_* bit values for Linux/SPARC.
-   Copyright (C) 1995, 1996, 1997, 1998, 2000, 2003, 2004, 2006, 2007
+   Copyright (C) 1995, 1996, 1997, 1998, 2000, 2003, 2004, 2006, 2007, 2009
    Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -83,8 +83,8 @@
 #define F_GETFL		3	/* Get file status flags.  */
 #define F_SETFL		4	/* Set file status flags.  */
 #if defined __USE_BSD || defined __USE_UNIX98
-# define F_GETOWN	5	/* Get owner of socket (receiver of SIGIO).  */
-# define F_SETOWN	6	/* Set owner of socket (receiver of SIGIO).  */
+# define F_GETOWN	5	/* Get owner (process receiving SIGIO).  */
+# define F_SETOWN	6	/* Set owner (process receiving SIGIO).  */
 #endif
 #ifndef __USE_FILE_OFFSET64
 # define F_GETLK	7	/* Get record locking info.  */
@@ -99,6 +99,8 @@
 #ifdef __USE_GNU
 # define F_SETSIG	10	/* Set number of signal to be sent.  */
 # define F_GETSIG	11	/* Get number of signal to be sent.  */
+# define F_SETOWN_EX	15	/* Set owner (thread receiving SIGIO).  */
+# define F_GETOWN_EX	16	/* Get owner (thread receiving SIGIO).  */
 #endif
 
 #ifdef __USE_GNU
@@ -185,6 +187,23 @@ struct flock64
   };
 #endif
 
+#ifdef __USE_GNU
+/* Owner types.  */
+enum __pid_type
+  {
+    F_OWNER_TID = 0,	/* Kernel thread.  */
+    F_OWNER_PID,	/* Process.  */
+    F_OWNER_GID		/* Process group.  */
+  };
+
+/* Structure to use with F_GETOWN_EX and F_SETOWN_EX.  */
+struct f_owner_ex
+  {
+    enum __pid_type type;	/* Owner type of ID.  */
+    __pid_t pid;		/* ID of owner.  */
+  };
+#endif
+
 /* Define some more compatibility macros to be backward compatible with
    BSD systems which did not managed to hide these kernel macros.  */
 #ifdef	__USE_BSD
@@ -259,8 +278,8 @@ extern ssize_t tee (int __fdin, int __fdout, size_t __len,
 extern int fallocate (int __fd, int __mode, __off_t __offset, __off_t __len);
 # else
 #  ifdef __REDIRECT
-extern int __REDIRECT (fallocate, (int __fd, int __mode, __off_t __offset,
-				   __off_t __len),
+extern int __REDIRECT (fallocate, (int __fd, int __mode, __off64_t __offset,
+				   __off64_t __len),
 		       fallocate64);
 #  else
 #   define fallocate fallocate64

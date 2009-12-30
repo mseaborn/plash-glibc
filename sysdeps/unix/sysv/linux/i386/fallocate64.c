@@ -16,6 +16,7 @@
    Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
    02111-1307 USA.  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <sysdep.h>
 
@@ -26,7 +27,12 @@ extern int __call_fallocate (int fd, int mode, __off64_t offset, __off64_t len)
 
 /* Reserve storage for the data of the file associated with FD.  */
 int
-__fallocate64_l64 (int fd, int mode, __off64_t offset, __off64_t len)
+fallocate64 (int fd, int mode, __off64_t offset, __off64_t len)
 {
+#ifdef __NR_fallocate
   return __call_fallocate (fd, mode, offset, len);
+#else
+  __set_errno (ENOSYS);
+  return -1;
+#endif
 }

@@ -219,33 +219,33 @@ res_ourserver_p(const res_state statp, const struct sockaddr_in6 *inp)
 {
 	int ns;
 
-        if (inp->sin6_family == AF_INET) {
-            struct sockaddr_in *in4p = (struct sockaddr_in *) inp;
+	if (inp->sin6_family == AF_INET) {
+	    struct sockaddr_in *in4p = (struct sockaddr_in *) inp;
 	    in_port_t port = in4p->sin_port;
 	    in_addr_t addr = in4p->sin_addr.s_addr;
 
-            for (ns = 0;  ns < MAXNS;  ns++) {
-                const struct sockaddr_in *srv =
+	    for (ns = 0;  ns < MAXNS;  ns++) {
+		const struct sockaddr_in *srv =
 		    (struct sockaddr_in *)EXT(statp).nsaddrs[ns];
 
-                if ((srv != NULL) && (srv->sin_family == AF_INET) &&
-                    (srv->sin_port == port) &&
-                    (srv->sin_addr.s_addr == INADDR_ANY ||
-                     srv->sin_addr.s_addr == addr))
-                    return (1);
-            }
-        } else if (inp->sin6_family == AF_INET6) {
-            for (ns = 0;  ns < MAXNS;  ns++) {
-                const struct sockaddr_in6 *srv = EXT(statp).nsaddrs[ns];
-                if ((srv != NULL) && (srv->sin6_family == AF_INET6) &&
-                    (srv->sin6_port == inp->sin6_port) &&
-                    !(memcmp(&srv->sin6_addr, &in6addr_any,
-                             sizeof (struct in6_addr)) &&
-                      memcmp(&srv->sin6_addr, &inp->sin6_addr,
-                             sizeof (struct in6_addr))))
-                    return (1);
-            }
-        }
+		if ((srv != NULL) && (srv->sin_family == AF_INET) &&
+		    (srv->sin_port == port) &&
+		    (srv->sin_addr.s_addr == INADDR_ANY ||
+		     srv->sin_addr.s_addr == addr))
+		    return (1);
+	    }
+	} else if (inp->sin6_family == AF_INET6) {
+	    for (ns = 0;  ns < MAXNS;  ns++) {
+		const struct sockaddr_in6 *srv = EXT(statp).nsaddrs[ns];
+		if ((srv != NULL) && (srv->sin6_family == AF_INET6) &&
+		    (srv->sin6_port == inp->sin6_port) &&
+		    !(memcmp(&srv->sin6_addr, &in6addr_any,
+			     sizeof (struct in6_addr)) &&
+		      memcmp(&srv->sin6_addr, &inp->sin6_addr,
+			     sizeof (struct in6_addr))))
+		    return (1);
+	    }
+	}
 	return (0);
 }
 
@@ -445,7 +445,7 @@ __libc_res_nsend(res_state statp, const u_char *buf, int buflen,
 				    malloc(sizeof (struct sockaddr_in6));
 			if (EXT(statp).nsaddrs[n] != NULL) {
 				memset (mempcpy(EXT(statp).nsaddrs[n],
-						&statp->nsaddr_list[ns],
+						&statp->nsaddr_list[n],
 						sizeof (struct sockaddr_in)),
 					'\0',
 					sizeof (struct sockaddr_in6)
@@ -908,24 +908,11 @@ send_vc(res_state statp,
 }
 
 static int
-send_dg(res_state statp,
-	const u_char *buf, int buflen, const u_char *buf2, int buflen2,
-	u_char **ansp, int *anssizp,
-	int *terrno, int ns, int *v_circuit, int *gotsomewhere, u_char **anscp,
-	u_char **ansp2, int *anssizp2, int *resplen2)
+reopen (res_state statp, int *terrno, int ns)
 {
-	const HEADER *hp = (HEADER *) buf;
-	const HEADER *hp2 = (HEADER *) buf2;
-	u_char *ans = *ansp;
-	int orig_anssizp = *anssizp;
-	struct sockaddr_in6 *nsap = EXT(statp).nsaddrs[ns];
-	struct timespec now, timeout, finish;
-	struct pollfd pfd[1];
-        int ptimeout;
-	struct sockaddr_in6 from;
-	int resplen, n;
-
 	if (EXT(statp).nssocks[ns] == -1) {
+		struct sockaddr_in6 *nsap = EXT(statp).nsaddrs[ns];
+
 		/* only try IPv6 if IPv6 NS and if not failed before */
 		if ((EXT(statp).nscount6 > 0) && !statp->ipv6_unavail) {
 			if (__builtin_expect (__have_o_nonblock >= 0, 1)) {
@@ -1000,6 +987,27 @@ send_dg(res_state statp,
 		}
 	}
 
+	return 1;
+}
+
+static int
+send_dg(res_state statp,
+	const u_char *buf, int buflen, const u_char *buf2, int buflen2,
+	u_char **ansp, int *anssizp,
+	int *terrno, int ns, int *v_circuit, int *gotsomewhere, u_char **anscp,
+	u_char **ansp2, int *anssizp2, int *resplen2)
+{
+	const HEADER *hp = (HEADER *) buf;
+	const HEADER *hp2 = (HEADER *) buf2;
+	u_char *ans = *ansp;
+	int orig_anssizp = *anssizp;
+	struct timespec now, timeout, finish;
+	struct pollfd pfd[1];
+	int ptimeout;
+	struct sockaddr_in6 from;
+	int resplen = 0;
+	int n;
+
 	/*
 	 * Compute time for the total operation.
 	 */
@@ -1008,8 +1016,15 @@ send_dg(res_state statp,
 		seconds /= statp->nscount;
 	if (seconds <= 0)
 		seconds = 1;
-	bool single_request = ((statp->options) & RES_SNGLKUP) != 0;// XXX
+	bool single_request = (statp->options & RES_SNGLKUP) != 0;
+	bool single_request_reopen = (statp->options & RES_SNGLKUPREOP) != 0;
 	int save_gotsomewhere = *gotsomewhere;
+
+	int retval;
+ retry_reopen:
+	retval = reopen (statp, terrno, ns);
+	if (retval <= 0)
+		return retval;
  retry:
 	evNowTime(&now);
 	evConsTime(&timeout, seconds, 0);
@@ -1036,7 +1051,7 @@ send_dg(res_state statp,
 		evSubTime(&timeout, &finish, &now);
 		need_recompute = 0;
 	}
-        /* Convert struct timespec in milliseconds.  */
+	/* Convert struct timespec in milliseconds.  */
 	ptimeout = timeout.tv_sec * 1000 + timeout.tv_nsec / 1000000;
 
 	n = 0;
@@ -1059,9 +1074,18 @@ send_dg(res_state statp,
 		       have received the first answer.  */
 		    if (!single_request)
 		      {
+			statp->options |= RES_SNGLKUP;
 			single_request = true;
 			*gotsomewhere = save_gotsomewhere;
 			goto retry;
+		      }
+		    else if (!single_request_reopen)
+		      {
+			statp->options |= RES_SNGLKUPREOP;
+			single_request_reopen = true;
+			*gotsomewhere = save_gotsomewhere;
+			__res_iclose (statp, false);
+			goto retry_reopen;
 		      }
 
 		    *resplen2 = 1;
@@ -1091,7 +1115,8 @@ send_dg(res_state statp,
 			Perror(statp, stderr, "send", errno);
 			goto err_out;
 		}
-		if (nwritten != 0 || buf2 == NULL || single_request)
+		if (nwritten != 0 || buf2 == NULL
+		    || single_request || single_request_reopen)
 		  pfd[0].events = POLLIN;
 		else
 		  pfd[0].events = POLLIN | POLLOUT;
@@ -1220,7 +1245,7 @@ send_dg(res_state statp,
 			/* record the error */
 			statp->_flags |= RES_F_EDNS0ERR;
 			goto err_out;
-        }
+	}
 #endif
 		if (!(statp->options & RES_INSECURE2)
 		    && (recvresp1 || !res_queriesmatch(buf, buf + buflen,
@@ -1254,14 +1279,10 @@ send_dg(res_state statp,
 				? *thisanssiz : *thisresplen);
 
 			if (recvresp1 || (buf2 != NULL && recvresp2))
-			  {
-			    *resplen2 = 1;
-			    return resplen;
-			  }
+			  return resplen;
 			if (buf2 != NULL)
 			  {
 			    /* We are waiting for a possible second reply.  */
-			    resplen = 1;
 			    if (hp->id == anhp->id)
 			      recvresp1 = 1;
 			    else
@@ -1305,8 +1326,15 @@ send_dg(res_state statp,
 			recvresp2 = 1;
 		/* Repeat waiting if we have a second answer to arrive.  */
 		if ((recvresp1 & recvresp2) == 0) {
-			if (single_request)
+			if (single_request || single_request_reopen) {
 				pfd[0].events = POLLOUT;
+				if (single_request_reopen) {
+					__res_iclose (statp, false);
+					retval = reopen (statp, terrno, ns);
+					if (retval <= 0)
+						return retval;
+				}
+			}
 			goto wait;
 		}
 		/*

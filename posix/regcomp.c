@@ -377,7 +377,7 @@ re_compile_fastmap_iter (regex_t *bufp, const re_dfastate_t *init_state,
 	     applies to multibyte character sets; for single byte character
 	     sets, the SIMPLE_BRACKET again suffices.  */
 	  if (dfa->mb_cur_max > 1
-	      && (cset->nchar_classes || cset->non_match
+	      && (cset->nchar_classes || cset->non_match || cset->nranges
 # ifdef _LIBC
 		  || cset->nequiv_classes
 # endif /* _LIBC */
@@ -2481,7 +2481,7 @@ parse_dup_op (bin_tree_t *elem, re_string_t *regexp, re_dfa_t *dfa,
 	  return elem;
 	}
 
-      if (BE (end != -1 && start > end, 0))
+      if (BE ((end != -1 && start > end) || token->type != OP_CLOSE_DUP_NUM, 0))
 	{
 	  /* First number greater than second.  */
 	  *err = REG_BADBR;

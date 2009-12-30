@@ -216,6 +216,9 @@ struct res_sym {
 					   reverse lookup */
 #define RES_USE_EDNS0	0x00100000	/* Use EDNS0.  */
 #define RES_SNGLKUP	0x00200000	/* one outstanding request at a time */
+#define RES_SNGLKUPREOP	0x00400000	/* -"-, but open new socket for each
+					   request */
+#define RES_USE_DNSSEC	0x00800000	/* use DNSSEC using OK bit in OPT */
 
 #define RES_DEFAULT	(RES_RECURSE|RES_DEFNAMES|RES_DNSRCH|RES_NOIP6DOTINT)
 
