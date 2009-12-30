@@ -1,3 +1,7 @@
+2009-09-04  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* configure.in: Support binutils 2.20.
+
 2009-05-10  Ulrich Drepper  <drepper@redhat.com>
 
 	* version.h (VERSION): Bump to 2.10.1.
